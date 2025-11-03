@@ -38,8 +38,8 @@ class MindCubeBench(ImageMCQDataset):
         SENTINEL_NAME = ".mindcubebench_extracted"
         cache_path = get_cache_path(repo_id)
 
-        sentinel_path = os.path.join(cache_path, SENTINEL_NAME)
-        if cache_path and os.path.isfile(sentinel_path):
+        if (cache_path and os.path.isdir(cache_path)
+                and os.path.isfile(os.path.join(cache_path, SENTINEL_NAME))):
             dataset_path = cache_path
         else:
             def _write_sentinel(sentinel_path, text="ok"):
@@ -76,6 +76,7 @@ class MindCubeBench(ImageMCQDataset):
                             with zf.open(info, 'r') as src, open(dst, 'wb') as out:
                                 out.write(src.read())
 
+                sentinel_path = os.path.join(pth, SENTINEL_NAME)
                 _write_sentinel(sentinel_path, text="done")
                 print('MindCube data extracted to current directory with original layout.')
 
