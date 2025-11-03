@@ -23,9 +23,14 @@ def abs_dist_norm(pred: float, target: float) -> float:
         return abs((pred - target) / target)
 
 
-def mean_relative_accuracy(pred: float, target: float,
-                            start: float = .5, end: float = .95, interval: float = .05) -> float:
-    ## TODO：check this, should be + 1, but in vsi code this is + 2
+def mean_relative_accuracy(
+    pred: float,
+    target: float,
+    start: float = 0.5,
+    end: float = 0.95,
+    interval: float = 0.05,
+) -> float:
+    # TODO：check this, should be + 1, but in vsi code this is + 2
     num_pts = int((end - start) / interval + 2)
     conf_intervs = np.linspace(start, end, num_pts)
     err = abs_dist_norm(pred, target)
@@ -68,7 +73,7 @@ def compute_mcq_score(df: pd.DataFrame) -> pd.DataFrame:
     preds_extracted, acc = [], []
     for _, r in df.iterrows():
         pred_raw = str(r['prediction'])
-        gt_raw   = str(r['answer']).strip()
+        gt_raw = str(r['answer']).strip()
 
         pred = can_match_option(pred_raw)
         gt = can_match_option(gt_raw)
@@ -77,8 +82,8 @@ def compute_mcq_score(df: pd.DataFrame) -> pd.DataFrame:
         acc.append(exact_match(pred, gt))
 
     df = df.copy()
-    df['pred_extracted']   = preds_extracted
-    df['hit']              = acc
+    df['pred_extracted'] = preds_extracted
+    df['hit'] = acc
     return df
 
 
@@ -90,7 +95,7 @@ def compute_na_score(df: pd.DataFrame) -> pd.DataFrame:
 
     for _, r in df.iterrows():
         pred_num = can_match_na(str(r['prediction']))
-        gt_num   = to_float(r['answer'])
+        gt_num = to_float(r['answer'])
 
         preds_extracted.append(pred_num)
 
@@ -100,8 +105,8 @@ def compute_na_score(df: pd.DataFrame) -> pd.DataFrame:
             mra_scores.append(mean_relative_accuracy(pred_num, gt_num, .5, .95, .05))
 
     df = df.copy()
-    df['pred_extracted']     = preds_extracted
-    df['MRA:.5:.95:.05']     = mra_scores
+    df['pred_extracted'] = preds_extracted
+    df['MRA:.5:.95:.05'] = mra_scores
     return df
 
 
@@ -130,7 +135,7 @@ def eval_mcq_core(
     dataset_name: str = 'MCQ'
 ):
     suffix = eval_file.split('.')[-1]
-    result_file = eval_file.replace(f'.{suffix}', f'_result.pkl')
+    result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
     base_no_suffix = eval_file[:-(len(suffix) + 1)]
     xlsx_path = f"{base_no_suffix}_extract_matching.xlsx"
     acc_tsv_path = f"{base_no_suffix}_acc.tsv"
@@ -206,4 +211,3 @@ def eval_mcq_core(
 
     print(f"[{dataset_name}] summary: {summary}")
     return summary
-
