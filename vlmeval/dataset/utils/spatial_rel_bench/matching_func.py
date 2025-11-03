@@ -16,6 +16,7 @@ TAGGED_NUMERIC_ANSWER = re.compile(
     flags=re.IGNORECASE | re.DOTALL
 )
 
+
 def can_match_option(
     answer_text: str,
     choices=None,
