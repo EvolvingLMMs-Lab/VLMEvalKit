@@ -25,12 +25,12 @@ class SiteBenchBase:
 
     def _task_category(self):
         return [
-            'counting_existence',
-            'object_localization_positioning',
-            '3d_information_understanding',
-            'multi-view_cross-image_reasoning',
-            'spatial_relationship_reasoning',
-            'movement_prediction_navigation',
+            'counting & existence',
+            'object localization & positioning',
+            '3d information understanding',
+            'multi-view & cross-image reasoning',
+            'spatial relationship reasoning',
+            'movement prediction & navigation',
         ]
 
     def download_sitebench(self, repo_id='franky-veteran/SITE-Bench'):
