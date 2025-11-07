@@ -11,7 +11,8 @@ class MMSIBench(ImageMCQDataset):
     TYPE = 'MCQ'
 
     # VLMEvalKit officially provides an MMSI *circular* TSV.
-    # In this repo we only run the *non-circular* evaluation.
+    # In this repo we only run the *non-circular* evaluation, which aligns with the
+    # evaluation protocol described in the MMSI paper.
     # To avoid modifying upstream VLMEvalKit, we do NOT integrate the circular set here.
     # (Use the official pipeline if you need the circular split.)
     LMUData_root = LMUDataRoot()
