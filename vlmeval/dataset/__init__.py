@@ -89,6 +89,9 @@ from .olmOCRBench.olmocrbench import olmOCRBench
 from .oceanocr import OceanOCRBench
 from .matbench import MATBench
 from .mindcubebench import MindCubeBench
+from .embspatialbench import EmbSpatialBench
+from .viewspatialbench import ViewSpatialBench
+from .mmsibench import MMSIBench
 
 from .reasonmap_plus import ReasonMap_Plus
 from .gsm8k_v import GSM8KVDataset
@@ -222,7 +225,7 @@ IMAGE_DATASET = [
     AyaVisionBench, TopViewRS, VLMBias, MMHELIX, MedqbenchMCQDataset, MathCanvas,
     MedqbenchPairedDescriptionDataset, MedqbenchCaptionDataset, ChartMuseum, ChartQAPro, ReasonMap_Plus,
     olmOCRBench, OceanOCRBench, MATBench, VLRMBench,
-    MindCubeBench
+    MindCubeBench, EmbSpatialBench, ViewSpatialBench, MMSIBench
 ]
 
 VIDEO_DATASET = [
