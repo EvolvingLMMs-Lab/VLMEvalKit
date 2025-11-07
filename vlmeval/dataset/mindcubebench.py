@@ -144,7 +144,7 @@ class MindCubeBench(ImageMCQDataset):
         return [s for s in segs if s['value']]
 
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.spatial_rel_bench.cal_scores import compute_mcq_score, eval_mcq_core
+        from .utils.spatial_bench.cal_scores import compute_mcq_score, eval_mcq_core
 
         return eval_mcq_core(
             load_fn=load,

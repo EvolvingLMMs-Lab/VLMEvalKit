@@ -292,7 +292,7 @@ class VsiBench(VideoBaseDataset):
         return message
 
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.spatial_rel_bench.cal_scores import compute_mcq_score, compute_na_score
+        from .utils.spatial_bench.cal_scores import compute_mcq_score, compute_na_score
 
         suffix = eval_file.split('.')[-1]
         result_file = eval_file.replace(f'.{suffix}', f'_result.pkl')

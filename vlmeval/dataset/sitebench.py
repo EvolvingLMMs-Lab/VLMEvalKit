@@ -90,7 +90,7 @@ class SiteBenchBase:
         return dataset_path
 
     def evaluate(self, eval_file, **kwargs):
-        from .utils.spatial_rel_bench.cal_scores import compute_mcq_score, compute_caa_score
+        from .utils.spatial_bench.cal_scores import compute_mcq_score, compute_caa_score
 
         suffix = eval_file.split('.')[-1]
         result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
