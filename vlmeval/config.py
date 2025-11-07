@@ -1855,10 +1855,16 @@ spatial_related_models = {
 
 sensesi_series = {
     "SenseSI-InternVL3-2B": partial(
-        InternVLChat, model_path="sensenova/SenseSI-InternVL3-2B", version="V2.0"
+        InternVLChat, 
+        model_path="sensenova/SenseSI-InternVL3-2B", 
+        use_custom_prompt=False,
+        version="V2.0"
     ),
     "SenseSI-InternVL3-8B": partial(
-        InternVLChat, model_path="sensenova/SenseSI-InternVL3-8B", version="V2.0"
+        InternVLChat, 
+        model_path="sensenova/SenseSI-InternVL3-8B", 
+        use_custom_prompt=False,
+        version="V2.0"
     ),
 }
 
