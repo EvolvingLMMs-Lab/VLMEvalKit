@@ -89,7 +89,16 @@ def compute_mcq_score(df: pd.DataFrame) -> pd.DataFrame:
 
 def compute_na_score(df: pd.DataFrame) -> pd.DataFrame:
     """
-        compute mra score according ti vsi codebase
+    Compute Mean Relative Accuracy (MRA) for numerical-answer (NA) items,
+    following the VSI codebase.
+
+    Definition:
+        For prediction ŷ, ground-truth y, and confidence threshold θ,
+        the relative accuracy is 1[ |ŷ - y| / |y| < 1 - θ ].
+        MRA averages this relative accuracy over θ ∈ {0.50, 0.55, ..., 0.95}.
+
+    Reference:
+        Thinking in Space: How Multimodal Large Language Models See, Remember, and Recall Spaces. (https://arxiv.org/pdf/2412.14171)  # noqa: E501
     """
     preds_extracted, mra_scores = [], []
 
@@ -112,7 +121,18 @@ def compute_na_score(df: pd.DataFrame) -> pd.DataFrame:
 
 def compute_caa_score(df_all: pd.DataFrame, default_choices: int = 4) -> float:
     """
-    CAA = (ΣXi - Σ(1/n_i)) / (N - Σ(1/n_i))
+    Compute Class-Adjusted Accuracy (CAA) for Multiple Choice Questions.
+
+    Definition:
+    For each item i with n_i options and correctness indicator X_i ∈ {0, 1},
+        CAA = (Σ_i X_i - Σ_i (1 / n_i)) / (N - Σ_i (1 / n_i))
+            - N   : total number of evaluated items.
+            - X_i : 1 if the prediction for item i is correct, otherwise 0.
+            - n_i : number of answer options for item i.
+
+    Reference:
+        SITE: Towards Spatial Intelligence Thorough Evaluation. (https://arxiv.org/pdf/2505.05456)
+
     """
     if len(df_all) == 0:
         return 0.0
