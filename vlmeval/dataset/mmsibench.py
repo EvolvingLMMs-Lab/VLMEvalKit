@@ -18,7 +18,7 @@ class MMSIBench(ImageMCQDataset):
     LMUData_root = LMUDataRoot()
     DATASET_URL = {}
 
-    DATASET_URL["MMSIBench_wo_circular"] = "https://huggingface.co/datasets/lmms-lab-spatial-intelligence/EASI-Leaderboard-Dataset/resolve/main/MMSIBench_wo_circular.tsv"  # noqa: E501
+    DATASET_URL["MMSIBench_wo_circular"] = "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/MMSIBench_wo_circular.tsv"  # noqa: E501
     DATASET_MD5 = {key: None for key in DATASET_URL}
 
     def _task_category(self):

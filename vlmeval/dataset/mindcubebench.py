@@ -17,8 +17,8 @@ class MindCubeBench(ImageMCQDataset):
     DATASET_URL = {}
 
     DATASET_URL = {
-        "MindCubeBench_tiny_raw_qa": "https://huggingface.co/datasets/lmms-lab-spatial-intelligence/EASI-Leaderboard-Dataset/resolve/main/MindCubeBench_tiny_raw_qa.tsv",  # noqa: E501
-        "MindCubeBench_raw_qa": "https://huggingface.co/datasets/lmms-lab-spatial-intelligence/EASI-Leaderboard-Dataset/resolve/main/MindCubeBench_raw_qa.tsv"  # noqa: E501
+        "MindCubeBench_tiny_raw_qa": "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/MindCubeBench_tiny_raw_qa.tsv",  # noqa: E501
+        "MindCubeBench_raw_qa": "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/MindCubeBench_raw_qa.tsv"  # noqa: E501
     }
     DATASET_MD5 = {key: None for key in DATASET_URL}
 
