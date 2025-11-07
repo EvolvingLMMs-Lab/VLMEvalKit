@@ -179,6 +179,27 @@ egoexobench_dataset = {
 
 }
 
+video_vsi_dataset = {}
+
+vsi_variants = VsiBench.supported_datasets()
+vsi_kwargs = [
+    {"nframe": 64, "suffix": "64frame"},
+    {"nframe": 32, "suffix": "32frame"},
+    {"fps": 1.0, "suffix": "1fps"},
+]
+
+for variant in vsi_variants:
+    for kwarg in vsi_kwargs:
+        suffix = kwarg.pop("suffix")
+        video_vsi_dataset[f"{variant}_{suffix}"] = partial(VsiBench, dataset=f'{variant}', **kwarg)
+        kwarg.update({"suffix": suffix})
+
+sitebenchvideo_dataset = {
+    'SiteBenchVideo_64frame': partial(SiteBenchVideo, dataset='SiteBenchVideo', nframe=64),
+    'SiteBenchVideo_32frame': partial(SiteBenchVideo, dataset='SiteBenchVideo', nframe=32),
+    'SiteBenchVideo_1fps': partial(SiteBenchVideo, dataset='SiteBenchVideo', fps=1),
+}
+
 supported_video_datasets = {}
 
 dataset_groups = [
@@ -187,6 +208,8 @@ dataset_groups = [
     megabench_dataset, qbench_video_dataset, moviechat1k_dataset, vdc_dataset, video_holmes_dataset, vcrbench_dataset,
     cg_av_counting_dataset, video_mmlu_dataset, egoexobench_dataset
 ]
+
+dataset_groups += [video_vsi_dataset, sitebenchvideo_dataset]
 
 for grp in dataset_groups:
     supported_video_datasets.update(grp)
