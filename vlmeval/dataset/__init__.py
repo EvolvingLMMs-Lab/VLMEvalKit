@@ -61,6 +61,8 @@ from .EgoExoBench.egoexobench import EgoExoBench_MCQ
 
 from .worldsense import WorldSense
 from .qbench_video import QBench_Video, QBench_Video_MCQ, QBench_Video_VQA
+from .sitebench import SiteBenchVideo
+from .vsibench import VsiBench
 
 from .cmmmu import CMMMU
 from .emma import EMMADataset
@@ -88,8 +90,14 @@ from .medqbench_paired_description import MedqbenchPairedDescriptionDataset
 from .olmOCRBench.olmocrbench import olmOCRBench
 from .oceanocr import OceanOCRBench
 from .matbench import MATBench
+from .mindcubebench import MindCubeBench
+from .embspatialbench import EmbSpatialBench
+from .viewspatialbench import ViewSpatialBench
+from .mmsibench import MMSIBench
+from .sitebench import SiteBenchImage
 
 from .reasonmap_plus import ReasonMap_Plus
+from .gsm8k_v import GSM8KVDataset
 
 
 class ConcatDataset(ImageBaseDataset):
@@ -206,7 +214,7 @@ IMAGE_DATASET = [
     MTVQADataset, TableVQABench, MMLongBench, VCRDataset, MMDUDataset, DUDE,
     SlideVQA, MUIRDataset, CCOCRDataset, GMAIMMBenchDataset, MMERealWorld,
     HRBenchDataset, CRPE, MathVerse, NaturalBenchDataset, MIABench,
-    OlympiadBench, SeePhys,WildVision, MMMath, QSpatial, Dynamath, MMGenBench, VizWiz,
+    OlympiadBench, SeePhys,WildVision, MMMath, QSpatial, Dynamath, GSM8KVDataset, MMGenBench, VizWiz,
     MMNIAH, CMMMU, VLRewardBench, WeMath, LogicVista, MMMUProDataset,
     CreationMMBenchDataset, ImageShortQADataset, MMAlignBench, OmniDocBench,
     VLM2Bench, VMCBenchDataset, EMMADataset, MME_CoT, MOAT, MedXpertQA_MM_test,
@@ -219,7 +227,8 @@ IMAGE_DATASET = [
     OmniEarthMCQBench, VisFactor, OSTDataset, OCRBench_v2, TreeBench, CVQA, M4Bench,
     AyaVisionBench, TopViewRS, VLMBias, MMHELIX, MedqbenchMCQDataset, MathCanvas,
     MedqbenchPairedDescriptionDataset, MedqbenchCaptionDataset, ChartMuseum, ChartQAPro, ReasonMap_Plus,
-    olmOCRBench, OceanOCRBench, MATBench, VLRMBench
+    olmOCRBench, OceanOCRBench, MATBench, VLRMBench,
+    MindCubeBench, EmbSpatialBench, ViewSpatialBench, MMSIBench, SiteBenchImage
 ]
 
 VIDEO_DATASET = [
