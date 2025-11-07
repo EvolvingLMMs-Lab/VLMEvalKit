@@ -21,7 +21,6 @@ class VsiBench(VideoBaseDataset):
     MODALITY = 'VIDEO'
 
     # EASI system prompt format from Holistic Evaluation of Multimodal LLMs on Spatial Intelligence. (https://arxiv.org/pdf/2508.13142)
-    # We follow the EASI system-prompt template from “Holistic Evaluation of Multimodal LLMs on Spatial Intelligence (EASI)” (arXiv:2508.13142).
     EASI_MCQ_SYS_PROMPT = (
         "You are a spatial-reasoning assistant. Always ground your answer in the visual evidence; "
         "do not hallucinate unseen objects. If uncertain, pick the most plausible option—never refuse or reply "
