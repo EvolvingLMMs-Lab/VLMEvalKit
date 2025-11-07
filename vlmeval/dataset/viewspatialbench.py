@@ -15,8 +15,7 @@ class ViewSpatialBench(ImageMCQDataset):
     LMUData_root = LMUDataRoot()
     DATASET_URL = {}
 
-    # TODO: change this into hugging face path after upload
-    DATASET_URL["ViewSpatialBench"] = osp.join(LMUData_root, "ViewSpatialBench.tsv")
+    DATASET_URL["ViewSpatialBench"] = "https://huggingface.co/datasets/lmms-lab-spatial-intelligence/EASI-Leaderboard-Dataset/resolve/main/ViewSpatialBench.tsv"  # noqa: E501
     DATASET_MD5 = {key: None for key in DATASET_URL}
 
     def _task_category(self):

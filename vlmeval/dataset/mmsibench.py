@@ -14,20 +14,10 @@ class MMSIBench(ImageMCQDataset):
     # In this repo we only run the *non-circular* evaluation.
     # To avoid modifying upstream VLMEvalKit, we do NOT integrate the circular set here.
     # (Use the official pipeline if you need the circular split.)
-    MMSI_TASKS = [
-        'wo_circular',
-    ]
-
     LMUData_root = LMUDataRoot()
-
-    # TODO: change this into hugging face path
     DATASET_URL = {}
 
-    for task in MMSI_TASKS:
-        name = f"MMSIBench_{task}"
-        path = osp.join(LMUData_root, name + ".tsv")
-        DATASET_URL[name] = path
-
+    DATASET_URL["MMSIBench_wo_circular"] = "https://huggingface.co/datasets/lmms-lab-spatial-intelligence/EASI-Leaderboard-Dataset/resolve/main/MMSIBench_wo_circular.tsv"  # noqa: E501
     DATASET_MD5 = {key: None for key in DATASET_URL}
 
     def _task_category(self):

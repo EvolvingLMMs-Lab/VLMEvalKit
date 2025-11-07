@@ -182,12 +182,9 @@ class SiteBenchImage(SiteBenchBase, ImageMCQDataset):
     TYPE = 'MCQ'
 
     LMUData_root = LMUDataRoot()
-
     DATASET_URL = {}
 
-    # TODO: change this into hugging face url
-    DATASET_URL["SiteBenchImage"] = os.path.join(LMUData_root, "SiteBenchImage.tsv")
-
+    DATASET_URL["SiteBenchImage"] = "https://huggingface.co/datasets/lmms-lab-spatial-intelligence/EASI-Leaderboard-Dataset/resolve/main/SiteBenchImage.tsv"  # noqa: E501
     DATASET_MD5 = {key: None for key in DATASET_URL}
 
     def prepare_tsv(self, url, file_md5=None):
@@ -292,13 +289,11 @@ class SiteBenchVideo(SiteBenchBase, VideoBaseDataset):
 
     TYPE = 'Video-MCQ'
     MODALITY = 'VIDEO'
-    LMUData_root = LMUDataRoot()
 
+    LMUData_root = LMUDataRoot()
     DATASET_URL = {}
 
-    # TODO: change this into hugging face url
-    DATASET_URL["SiteBenchVideo"] = os.path.join(LMUData_root, "SiteBenchVideo.tsv")
-
+    DATASET_URL["SiteBenchVideo"] = "https://huggingface.co/datasets/lmms-lab-spatial-intelligence/EASI-Leaderboard-Dataset/resolve/main/SiteBenchVideo.tsv"  # noqa: E501
     DATASET_MD5 = {key: None for key in DATASET_URL}
 
     def __init__(self, dataset='SiteBenchVideo', pack=False, nframe=0, fps=-1):
