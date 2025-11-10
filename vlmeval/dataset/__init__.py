@@ -242,6 +242,7 @@ VIDEO_DATASET = [
     Video_MMLU_CAP, Video_MMLU_QA,
     Video_Holmes, VCRBench, CGAVCounting,
     EgoExoBench_MCQ,
+    SiteBenchVideo, VsiBench
 ]
 
 TEXT_DATASET = [
