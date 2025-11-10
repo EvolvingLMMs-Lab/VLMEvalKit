@@ -1972,16 +1972,16 @@ spatial_related_models = {
     ),
 }
 
-sensesi_series = {
-    "SenseSI-InternVL3-2B": partial(
+sensenova_si_series = {
+    "SenseNova-SI-InternVL3-2B": partial(
         InternVLChat, 
-        model_path="sensenova/SenseSI-InternVL3-2B", 
+        model_path="sensenova/SenseNova-SI-InternVL3-2B", 
         use_custom_prompt=False,
         version="V2.0"
     ),
-    "SenseSI-InternVL3-8B": partial(
+    "SenseNova-SI-InternVL3-8B": partial(
         InternVLChat, 
-        model_path="sensenova/SenseSI-InternVL3-8B", 
+        model_path="sensenova/SenseNova-SI-InternVL3-8B", 
         use_custom_prompt=False,
         version="V2.0"
     ),
@@ -2022,7 +2022,7 @@ model_groups = [
 ]
 
 model_groups.append(spatial_related_models)
-model_groups.append(sensesi_series)
+model_groups.append(sensenova_si_series)
 
 for grp in model_groups:
     supported_VLM.update(grp)
