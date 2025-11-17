@@ -46,34 +46,49 @@ class VsiBench(VideoBaseDataset):
     LMUData_root = LMUDataRoot()
     DATASET_URL = {}
 
-    DATASET_URL["VSI-Bench"] = "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/VSI-Bench.tsv"  # noqa: E501
+    DATASET_URL = {
+        "VSI-Bench": "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/VSI-Bench.tsv",  # noqa: E501
+        "VSI-Bench-Debiased": "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/VSI-Bench-Debiased.tsv",  # noqa: E501
+    }
     DATASET_MD5 = {key: None for key in DATASET_URL}
 
     def __init__(self, dataset, pack=False, nframe=0, fps=-1, sample_strategy='uniform_tail'):
-        super().__init__(dataset=dataset, pack=pack, nframe=nframe, fps=fps)
+        self.sample_strategy = sample_strategy
+        self.base_name, self.is_debiased, self.variant = self.parse_dataset_name(dataset)
+        print(f"VsiBench variant={self.variant}, debiased={self.is_debiased}")
 
         valid_strategies = {'uniform_tail', 'uniform', 'chunk_center'}
         if sample_strategy not in valid_strategies:
             raise ValueError(f"[{dataset}] Unsupported sample_strategy '{sample_strategy}'")
 
-        self.sample_strategy = sample_strategy
-        self.variant = self.get_variant(dataset)
-        print(f"VsiBench using variant : {self.variant}")
+        super().__init__(dataset=dataset, pack=pack, nframe=nframe, fps=fps)
 
-    def get_variant(self, name: str, default="origin"):
-        base = "VSI-Bench"
-        if not isinstance(name, str) or not name.startswith(base):
-            return None
-        suffix = name[len(base):]
-        suffix = suffix.lstrip("_").strip()
-        return suffix or default
+    @staticmethod
+    def parse_dataset_name(name: str,
+                           default_variant: str = "origin",
+                           default_base: str = "VSI-Bench"):
+        if not isinstance(name, str):
+            return default_variant, default_base, False
+
+        lower = name.lower()
+
+        is_debiased = "debiased" in lower
+        base_name = "VSI-Bench-Debiased" if is_debiased else "VSI-Bench"
+
+        if lower.endswith("_standard"):
+            variant = "standard"
+        elif lower.endswith("_origin"):
+            variant = "origin"
+        else:
+            variant = default_variant
+
+        return base_name, is_debiased, variant
 
     @classmethod
     def supported_datasets(cls):
-        return [
-            'VSI-Bench_origin',
-            'VSI-Bench_standard'
-        ]
+        bases = ["VSI-Bench", "VSI-Bench-Debiased"]
+        variants = ["origin", "standard"]
+        return [f"{b}_{v}" for b in bases for v in variants]
 
     def get_task_type(self, question_type):
         MCQ_items = [
@@ -156,10 +171,10 @@ class VsiBench(VideoBaseDataset):
         return dataset_path
 
     def prepare_dataset(self, dataset_name):
-        _ = super().prepare_tsv(
-            self.DATASET_URL['VSI-Bench'],
-            self.DATASET_MD5['VSI-Bench']
-        )
+        url = self.DATASET_URL[self.base_name]
+        md5 = self.DATASET_MD5[self.base_name]
+
+        _ = super().prepare_tsv(url, md5)
 
         dataset_path = self.download_vsibench()
         self.dataset_path = dataset_path
@@ -208,7 +223,7 @@ class VsiBench(VideoBaseDataset):
             if self.sample_strategy == 'uniform_tail' and (video_nframes - 1) != indices[-1]:
                 indices.append(video_nframes - 1)
 
-            frame_paths = self.frame_paths_fps(video_path)
+            frame_paths = self.frame_paths_fps(video_path, len(indices))
 
         flag = np.all([osp.exists(p) for p in frame_paths])
 
