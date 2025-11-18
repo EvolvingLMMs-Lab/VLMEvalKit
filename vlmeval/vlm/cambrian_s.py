@@ -31,6 +31,28 @@ def is_image_file(x) -> bool:
 
 
 class CambrianS(BaseModel):
+    """
+    Cambrian-S: Towards Spatial Supersensing in Video
+
+    Requirements:
+    1. Clone the official Cambrian-S repository:
+
+       git clone https://github.com/cambrian-mllm/cambrian-s.git
+
+    2. Install it in development mode (recommended to use the same Python env
+       as VLMEvalKit):
+
+       cd cambrian-s
+       pip install -e .
+
+       or, if you use uv:
+
+       cd cambrian-s
+       uv pip install -e .
+
+    Note: This will automatically install all dependencies including torch, transformers, etc.
+    """
+
     INSTALL_REQ = True
     INTERLEAVE = True
     VIDEO_LLM = True
@@ -40,11 +62,11 @@ class CambrianS(BaseModel):
         model_path: str = "nyu-visionx/Cambrian-S-7B",
         conv_template: str = "qwen_2",
         use_cache: bool = False,
-        # 视频参数
-        video_max_frames: int = 128,
+        # video-related params
+        video_max_frames: int = 32,
         video_fps: int = 1,
         video_force_sample: bool = False,
-        # anyres
+        # anyres / multi-scale image processing
         miv_token_len: int = 64,
         si_token_len: int = 729,
         image_aspect_ratio: str = "anyres",
@@ -63,7 +85,12 @@ class CambrianS(BaseModel):
             )
             from cambrian.conversation import conv_templates
         except Exception as e:
-            logging.critical("Please install cambrian from https://github.com/cambrian-mllm/cambrian.")
+            logging.critical(
+                "Failed to import Cambrian-S modules. Please ensure you have:\n"
+                "  git clone https://github.com/cambrian-mllm/cambrian-s.git\n"
+                "  cd cambrian-s && pip install -e .\n"
+                f"Original error: {e}"
+            )
             raise e
 
         self.process_images = process_images
