@@ -314,7 +314,9 @@ class CambrianS(BaseModel):
                         raise TypeError("Each message element must contain type+value or text/image field")
 
                 if mtype == "text":
-                    contexts_list.append(str(mval))
+                    sval = str(mval)
+                    if sval != "":
+                        contexts_list.append(sval)
                 elif mtype == "image":
                     visuals.append(mval)
                     contexts_list.append("")  # empty string placeholder; will be turned into DEFAULT_IMAGE_TOKEN later

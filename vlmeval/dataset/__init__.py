@@ -32,7 +32,6 @@ from .spatial457 import Spatial457
 from .charxiv import CharXiv
 from .chartmuseum import ChartMuseum
 from .chartqapro import ChartQAPro
-from .refcoco import RefCOCODataset
 
 from .mmbench_video import MMBenchVideo
 from .videomme import VideoMME
