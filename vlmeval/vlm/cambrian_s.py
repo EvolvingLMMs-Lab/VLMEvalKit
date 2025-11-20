@@ -103,7 +103,7 @@ class CambrianS(BaseModel):
         self.DEFAULT_IM_END_TOKEN = DEFAULT_IM_END_TOKEN
         self.conv_templates = conv_templates
 
-        self.device = "cuda:0"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         model_name = self.get_model_name_from_path(model_path)
         self.tokenizer, self.model, self.image_processor, self.max_length = load_pretrained_model(
