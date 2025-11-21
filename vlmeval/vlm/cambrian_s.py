@@ -10,26 +10,6 @@ from decord import VideoReader, cpu
 from .base import BaseModel
 
 
-def is_video_file(x) -> bool:
-    if isinstance(x, Image.Image):
-        return False
-    video_exts = {".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".webm"}
-    if not isinstance(x, str):
-        return False
-    _, ext = os.path.splitext(x)
-    return ext.lower() in video_exts
-
-
-def is_image_file(x) -> bool:
-    if isinstance(x, Image.Image):
-        return True
-    image_exts = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".webp"}
-    if not isinstance(x, str):
-        return False
-    _, ext = os.path.splitext(x)
-    return ext.lower() in image_exts
-
-
 class CambrianS(BaseModel):
     """
     Cambrian-S: Towards Spatial Supersensing in Video
@@ -103,7 +83,7 @@ class CambrianS(BaseModel):
         self.DEFAULT_IM_END_TOKEN = DEFAULT_IM_END_TOKEN
         self.conv_templates = conv_templates
 
-        self.device = "cuda:0"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         model_name = self.get_model_name_from_path(model_path)
         self.tokenizer, self.model, self.image_processor, self.max_length = load_pretrained_model(
@@ -151,11 +131,8 @@ class CambrianS(BaseModel):
 
         return target_fps, max_frames
 
-    def _process_video_with_decord(self, video_file: str, num_threads: int = -1):
-        if num_threads < 1:
-            vr = VideoReader(video_file, ctx=cpu(0))
-        else:
-            vr = VideoReader(video_file, ctx=cpu(0), num_threads=num_threads)
+    def _process_video_with_decord(self, video_file: str, num_threads: int = 0):
+        vr = VideoReader(video_file, ctx=cpu(0), num_threads=num_threads)
 
         total_frame_num = len(vr)
         fps = float(vr.get_avg_fps()) if vr.get_avg_fps() else 30.0
@@ -183,7 +160,7 @@ class CambrianS(BaseModel):
         num_frames_to_sample = len(frame_idx)
         return video, video_time, frame_time_str, num_frames_to_sample
 
-    def _process_videos(self, videos: List[str], num_threads: int = -1):
+    def _process_videos(self, videos: List[str]):
         processor_aux_list = self.image_processor
         if not isinstance(processor_aux_list, (list, tuple)):
             processor_aux_list = [processor_aux_list]
@@ -193,9 +170,7 @@ class CambrianS(BaseModel):
         last_meta = None
 
         for video_path in videos:
-            video_np, video_time, frame_time, num_frames_to_sample = self._process_video_with_decord(
-                video_path, num_threads=num_threads
-            )
+            video_np, video_time, frame_time, num_frames_to_sample = self._process_video_with_decord(video_path)
             last_meta = (video_time, frame_time, num_frames_to_sample)
 
             T, H, W, _ = video_np.shape
@@ -277,10 +252,7 @@ class CambrianS(BaseModel):
 
             visuals = [vpath]
 
-            num_threads = -1
-            visual_tensors, visual_sizes, _ = self._process_videos(
-                visuals, num_threads=num_threads
-            )
+            visual_tensors, visual_sizes, _ = self._process_videos(visuals)
 
             qs = contexts
             if self.model_config.mm_use_im_start_end:
