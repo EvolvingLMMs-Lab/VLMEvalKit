@@ -117,3 +117,4 @@ from .logics import Logics_Thinking
 from .cosmos import Cosmos
 from .spatial_mllm import SpatialMLLM
 from .liquid import LFM2VL
+from .bagel_umm import Bagel
