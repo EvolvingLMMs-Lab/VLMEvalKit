@@ -2011,7 +2011,7 @@ sensenova_si_series = {
     ),
     "SenseNova-SI-1.1-InternVL3-2B": partial(
         InternVLChat, 
-        model_path="sensenova/SenseNova-SI-1.1-InternVL3-8B", 
+        model_path="sensenova/SenseNova-SI-1.1-InternVL3-2B", 
         use_custom_prompt=False,
         version="V2.0"
     ),
