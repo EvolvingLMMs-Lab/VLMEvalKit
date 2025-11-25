@@ -1,29 +1,18 @@
 # flake8: noqa
-import ast
-import os.path as osp
-import decord
-import re
-import math
+import os
 
 from ..smp import *
 from ..smp.file import LMUDataRoot, load
 from .image_base import ImageBaseDataset
-from .utils import build_judge, DEBUG_MESSAGE
+
 
 class SparBench(ImageBaseDataset):
     TYPE = 'VQA'
 
-    SPAR_TASKS = [
-        '',
-        '50'
-    ]
-
-    LMUData_root = LMUDataRoot()
     DATASET_URL = {}
 
-    # TODO: change this
-    DATASET_URL['SparBench'] = '/mnt/aigc/wangyubo/data/UG/data/benchmark/spar_zoe/tsv/SparBench.tsv'
-    DATASET_URL['SparBench_50'] = '/mnt/aigc/wangyubo/data/UG/data/benchmark/spar_zoe/tsv/SparBench_50.tsv'
+    DATASET_URL['SparBench'] = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SparBench.tsv'
+    DATASET_URL['SparBench_tiny'] = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SparBench_tiny.tsv'
 
     DATASET_MD5 = {key: None for key in DATASET_URL}
 
@@ -68,7 +57,6 @@ class SparBench(ImageBaseDataset):
             raise ValueError(f"Unsupported SparBench task type: {task}")
 
     def build_prompt(self, line):
-
         if self.meta_only:
             tgt_path = toliststr(line['image_path'])
         else:
@@ -100,8 +88,6 @@ class SparBench(ImageBaseDataset):
         else:
             raise ValueError(f"Unknown question type: {task}")
 
-        print(f"prompt: {prompt}")
-
         msgs = []
         if isinstance(tgt_path, list):
             msgs.extend([dict(type='image', value=p) for p in tgt_path])
@@ -131,7 +117,6 @@ class SparBench(ImageBaseDataset):
 
         print(f"[split] MCQ={len(mcq_data)}, NA={len(na_data)}, SPECIAL={len(special_data)}")
 
-        # 计算每类题型的逐样本分数列
         if len(mcq_data):
             mcq_scored = compute_mcq_score(mcq_data)
         else:
@@ -147,10 +132,8 @@ class SparBench(ImageBaseDataset):
         else:
             sp_scored = special_data
 
-        # 聚合（任务均值 + overall + Low/Middle/High）
         summary = self._aggregate(mcq_scored, na_scored, sp_scored)
 
-        # 打印或保存；与上游保持“返回 overall*100”
         print(f"[SparBench] summary: {summary}")
 
         # ---- save pkl dump ----
@@ -197,7 +180,6 @@ class SparBench(ImageBaseDataset):
             if frames:
                 merged = pd.concat(frames, axis=0, ignore_index=True)
             else:
-                # fallback：无数据
                 merged = pd.DataFrame()
 
             prefer_front = [
@@ -219,22 +201,18 @@ class SparBench(ImageBaseDataset):
 
         # ---- save acc.tsv ----
         try:
-            # 1. 去掉内部 meta key
             summary_clean = {
                 k: v for k, v in summary.items()
                 if k not in ('tabulated_keys', 'tabulated_results')
             }
 
-            # 2. 排序：先 overall/Low/Middle/High，再其它 task-level metrics
             front_keys = ['overall', 'Low', 'Middle', 'High']
             other_keys = [k for k in summary_clean.keys() if k not in front_keys]
 
             final_order = front_keys + other_keys
 
-            # 3. 生成一行的 DataFrame
             acc_df = pd.DataFrame({k: [summary_clean.get(k, None)] for k in final_order})
 
-            # 4. 保存
             acc_df.to_csv(acc_tsv_path, sep="\t", index=False)
             print(f"[save] accuracy table saved to {acc_tsv_path}")
 
@@ -263,7 +241,6 @@ class SparBench(ImageBaseDataset):
 
     @classmethod
     def _compute_vci_metric(cls, pred: str, answer: str) -> float:
-        # 与你给的 compute_vci_metric 等价，但修正 MRA 参数顺序为 (pred, target)
         action_order = [
             ("move_right", "move_left"),
             ("move_up", "move_down"),
@@ -283,7 +260,7 @@ class SparBench(ImageBaseDataset):
 
     def compute_special_score(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        当前只有 view_change_infer：输出新增列 'vci_metric'
+        add col 'vci_metric'
         """
         vals = []
         for _, r in df.iterrows():
@@ -295,14 +272,12 @@ class SparBench(ImageBaseDataset):
         df['vci_metric'] = vals
         return df
 
-    # ==== 汇总（与 sparbench_aggregate_results 一致）====
     def _aggregate(self, mcq_df, na_df, sp_df) -> dict:
         out = {}
 
-        # 每个 task 的均值
         if len(mcq_df):
             for task, sub in mcq_df.groupby('task'):
-                metric_name = 'hit'  # compute_mcq_score 的正确率列名
+                metric_name = 'hit'
                 out[f'{task}_accuracy'] = float(sub[metric_name].mean())
 
         if len(na_df):
@@ -310,18 +285,15 @@ class SparBench(ImageBaseDataset):
                 out[f'{task}_MRA:.5:.95:.05'] = float(sub['MRA:.5:.95:.05'].mean())
 
         if len(sp_df):
-            # 目前仅 view_change_infer
             for task, sub in sp_df.groupby('task'):
                 if 'vci_metric' in sub.columns:
                     out[f'{task}_vci_metric'] = float(sub['vci_metric'].mean())
 
-        # overall = 这些 task-level 均值的简单等权平均
         if len(out):
             out['overall'] = float(np.mean(list(out.values())))
         else:
             out['overall'] = 0.0
 
-        # 可选：Low/Middle/High（仅用于日志观察，不影响返回值）
         Low = set([
             "depth_prediction_oc","depth_prediction_oo",
             "distance_prediction_oc","distance_prediction_oo",
@@ -339,7 +311,7 @@ class SparBench(ImageBaseDataset):
         for k, v in out.items():
             if k == 'overall':
                 continue
-            task_name = "_".join(k.split("_")[:-1])  # 去掉最后一个度量字段
+            task_name = "_".join(k.split("_")[:-1])
             if task_name in Low:
                 lows.append(v)
             elif task_name in Middle:
