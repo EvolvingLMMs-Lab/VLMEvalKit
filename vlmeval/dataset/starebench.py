@@ -24,12 +24,12 @@ class StareBench(ImageMCQDataset):
     DATASET_URL = {}
 
     DATASET_URL['StareBench'] = os.path.join(LMUData_root, 'StareBench.tsv')
-    DATASET_URL['StareBench_CoT'] = os.path.join(LMUData_root, 'StareBench_CoT.tsv')
+    DATASET_URL['StareBench_CoT'] = os.path.join(LMUData_root, 'StareBench.tsv')
 
     DATASET_MD5 = {key: None for key in DATASET_URL}
 
     def __init__(self, dataset, skip_noimg=True):
-        super().__init__(dataset='StareBench', skip_noimg=skip_noimg)
+        super().__init__(dataset=dataset, skip_noimg=skip_noimg)
         self.use_cot = self.parse_dataset_name(dataset)
 
     @staticmethod
@@ -162,7 +162,10 @@ class StareBench(ImageMCQDataset):
         return dataset_path
 
     def prepare_tsv(self, url, file_md5=None):
-        data = super().prepare_tsv(url, file_md5)
+        data = super().prepare_tsv(
+            self.DATASET_URL[self.dataset_name],
+            self.DATASET_MD5[self.dataset_name]
+        )
         dataset_path = self.download_starebench()
 
         def unescape_text(s: str) -> str:
@@ -237,6 +240,9 @@ class StareBench(ImageMCQDataset):
             post_prompt = "Please solve the problem step by step."
 
         prompt = "\n".join([mcq_format, post_prompt,])
+
+        print(f"prompt: {prompt}")
+
         msgs = self.build_msgs(tgt_path, prompt)
 
         return msgs
@@ -280,8 +286,8 @@ class StareBench(ImageMCQDataset):
             'perspective',
         ]
         binary = [
-            'folding_nets', 'folding_nets_VSim',
-            'tangram_puzzle', 'tangram_puzzle_VSim',
+            'folding_nets', 'folding_nets_vsim',
+            'tangram_puzzle', 'tangram_puzzle_vsim',
         ]
         ordered = mcq + binary
 
