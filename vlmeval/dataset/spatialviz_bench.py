@@ -1,13 +1,12 @@
-import os.path as osp
 import string
 import pandas as pd
-import re
 
 from collections import OrderedDict
 
 from .image_mcq import ImageMCQDataset
-from ..smp.file import LMUDataRoot, load, dump, get_intermediate_file_path
+from ..smp.file import LMUDataRoot, load
 from ..smp.misc import toliststr
+from vlmeval.smp.log import get_logger
 
 
 class SpatialVizBench(ImageMCQDataset):
@@ -15,39 +14,41 @@ class SpatialVizBench(ImageMCQDataset):
 
     LMUData_root = LMUDataRoot()
 
-    # TODO: upload spatialviz data to somewhere, backup place: zoe hf? or opencompass space
     DATASET_URL = {
-        'SpatialVizBench': osp.join(LMUData_root, 'SpatialVizBench.tsv'),
-        'SpatialVizBench_CoT': osp.join(LMUData_root, 'SpatialVizBench_CoT.tsv'),
+        'SpatialVizBench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SpatialVizBench.tsv',  # noqa: E501
+        'SpatialVizBench_CoT':'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SpatialVizBench.tsv'  # noqa: E501
     }
 
-    DATASET_MD5 = {
-        'SpatialVizBench': None,  # TODO: check this
-        'SpatialVizBench_CoT': None,  # TODO: check this
-    }
-
-    CATEGORY_TASK_ORDER = OrderedDict([
-        ("MentalRotation", ["2DRotation", "3DRotation", "3ViewProjection"]),
-        ("MentalFolding", ["PaperFolding", "CubeUnfolding", "CubeReconstruction"]),
-        ("VisualPenetration", ["CrossSection", "CubeCounting", "CubeAssembly"]),
-        ("MentalAnimation", ["ArrowMoving", "BlockMoving", "MechanicalSystem"]),
-    ])
+    DATASET_MD5 = {key: None for key in DATASET_URL}
+    _CATEGORY_TASK_ORDER = None
 
     def __init__(self, dataset, skip_noimg=True):
         super().__init__(dataset=dataset, skip_noimg=skip_noimg)
 
+        self.logger = get_logger(__name__)
+
+        self._CATEGORY_TASK_ORDER = None
         self.use_cot = self.parse_dataset_name(dataset)
+        self.logger.info(f"Evaluate {dataset} with CoT = {self.use_cot}")
 
     @staticmethod
     def parse_dataset_name(name: str) -> bool:
-
-        print(f"--------------- in use cot : {name}- -------------------")
-
         if not isinstance(name, str):
             return False
 
         lower = name.lower()
         return lower.endswith("_cot")
+
+    @classmethod
+    def category_task_order(cls) -> OrderedDict:
+        if cls._CATEGORY_TASK_ORDER is None:
+            cls._CATEGORY_TASK_ORDER = OrderedDict([
+                ("MentalRotation", ["2DRotation", "3DRotation", "3ViewProjection"]),
+                ("MentalFolding", ["PaperFolding", "CubeUnfolding", "CubeReconstruction"]),
+                ("VisualPenetration", ["CrossSection", "CubeCounting", "CubeAssembly"]),
+                ("MentalAnimation", ["ArrowMoving", "BlockMoving", "MechanicalSystem"]),
+            ])
+        return cls._CATEGORY_TASK_ORDER
 
     def build_prompt(self, line):
         if isinstance(line, int):
@@ -101,41 +102,35 @@ class SpatialVizBench(ImageMCQDataset):
     def evaluate(self, eval_file, **judge_kwargs):
         from .utils.spatial_bench.cal_scores import compute_mcq_score, eval_mcq_core
 
+        category_task_order = self.category_task_order()
         raw = eval_mcq_core(
             load_fn=load,
             eval_file=eval_file,
             score_fn=compute_mcq_score,
             group_col=['category', 'task'],
             order={
-                'category': list(self.CATEGORY_TASK_ORDER.keys()),
-                'task': sum(self.CATEGORY_TASK_ORDER.values(), []),
+                'category': list(category_task_order.keys()),
+                'task': sum(category_task_order.values(), []),
             },
             dataset_name=getattr(self, 'dataset_name', 'SpatialVizBench'),
         )
 
-        # raw 里有：
-        #   overall
-        #   MentalRotation_accuracy / ...
-        #   task.2DRotation_accuracy / ...
-
         pretty = OrderedDict()
         pretty['overall'] = raw['overall']
 
-        # 按你想要的顺序拼：子类 -> 大类 avg
-        for cat, tasks in self.CATEGORY_TASK_ORDER.items():
+        for cat, tasks in category_task_order.items():
             for t in tasks:
-                k = f"task.{t}_accuracy"
-                if k in raw:
-                    pretty[f"{t}_accuracy"] = raw[k]
-            cat_key = f"{cat}_accuracy"
-            if cat_key in raw:
-                pretty[cat_key] = raw[cat_key]
+                raw_key = f"task.{t}_accuracy"
+                if raw_key in raw:
+                    pretty[f"{t}_accuracy"] = raw[raw_key]
 
-        # 最后再补一行 tabulated，方便直接塞 LaTeX
+            cat_raw_key = f"category.{cat}_accuracy"
+            if cat_raw_key in raw:
+                pretty[f"{cat}_accuracy"] = raw[cat_raw_key]
+
         keys_str = ", ".join(pretty.keys())
         vals_str = ", ".join(f"{v:.3f}" for v in pretty.values())
         pretty['tabulated_keys'] = keys_str
         pretty['tabulated_results'] = vals_str
 
-        # 你如果还想保留原始 raw，可以一起返回
         return pretty
