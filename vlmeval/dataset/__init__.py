@@ -98,6 +98,7 @@ from .sitebench import SiteBenchImage
 from .sparbench import SparBench
 from .spatialviz_bench import SpatialVizBench
 from .starebench import StareBench
+from .omnispatialbench import OmniSpatialBench
 
 from .reasonmap_plus import ReasonMap_Plus
 from .gsm8k_v import GSM8KVDataset
@@ -236,7 +237,7 @@ IMAGE_DATASET = [
 # add by EASI team
 IMAGE_DATASET += [
     MindCubeBench, EmbSpatialBench, ViewSpatialBench, MMSIBench, SiteBenchImage,
-    SparBench, SpatialVizBench, StareBench
+    SparBench, SpatialVizBench, StareBench, OmniSpatialBench
 ]
 
 VIDEO_DATASET = [
