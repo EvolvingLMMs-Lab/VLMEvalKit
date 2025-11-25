@@ -1,9 +1,16 @@
-# flake8: noqa
-import os
+import pickle
+import warnings
+import numpy as np
+import pandas as pd
 
-from ..smp import *
-from ..smp.file import LMUDataRoot, load
+from collections import OrderedDict
+
+from ..smp.misc import toliststr
+from ..smp.file import load
 from .image_base import ImageBaseDataset
+from .utils.spatial_rel_bench.cal_scores import (
+    compute_mcq_score, compute_na_score, mean_relative_accuracy
+)
 
 
 class SparBench(ImageBaseDataset):
@@ -11,14 +18,13 @@ class SparBench(ImageBaseDataset):
 
     DATASET_URL = {}
 
-    DATASET_URL['SparBench'] = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SparBench.tsv'
-    DATASET_URL['SparBench_tiny'] = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SparBench_tiny.tsv'
+    DATASET_URL['SparBench'] = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SparBench.tsv'  # noqa: E501
+    DATASET_URL['SparBench_tiny'] = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SparBench_tiny.tsv'  # noqa: E501
 
     DATASET_MD5 = {key: None for key in DATASET_URL}
 
-    @classmethod
-    def get_task_type(self, task):
-        MCA_QUESTION_TYPES = [
+    TASK_TYPES = {
+        'MCQ': [
             "obj_spatial_relation_oo",
             "obj_spatial_relation_oc_mv",
             "obj_spatial_relation_oo_mv",
@@ -29,32 +35,77 @@ class SparBench(ImageBaseDataset):
             "position_matching",
             "camera_motion_infer",
             "distance_infer_center_oo",
-            "distance_infer_center_oo_mv"
-        ]
-        NA_QUESTION_TYPES = [
+            "distance_infer_center_oo_mv",
+        ],
+        'NA': [
             "depth_prediction_oc",
             "depth_prediction_oo",
             "distance_prediction_oc",
             "distance_prediction_oo",
-
             "depth_prediction_oc_mv",
             "depth_prediction_oo_mv",
             "distance_prediction_oo_mv",
             "distance_prediction_oc_mv",
-        ]
-
-        SPECIAL_QUESTION_TYPES = [
+        ],
+        'SPECIAL': [
             "view_change_infer",
-        ]
+        ],
+    }
 
-        if task in MCA_QUESTION_TYPES:
+    LOW_TASKS = [
+        "depth_prediction_oc", "depth_prediction_oc_mv",
+        "depth_prediction_oo", "depth_prediction_oo_mv",
+        "distance_prediction_oc", "distance_prediction_oc_mv",
+        "distance_prediction_oo", "distance_prediction_oo_mv",
+    ]
+
+    MIDDLE_TASKS = [
+        "position_matching",
+        "camera_motion_infer",
+        "view_change_infer",
+    ]
+
+    HIGH_TASKS = [
+        "distance_infer_center_oo", "distance_infer_center_oo_mv",
+        "obj_spatial_relation_oc_mv", "obj_spatial_relation_oo", "obj_spatial_relation_oo_mv",
+        "spatial_imagination_oc", "spatial_imagination_oc_mv",
+        "spatial_imagination_oo", "spatial_imagination_oo_mv",
+    ]
+
+    # used to strip suffix
+    METRIC_SUFFIXES = (
+        "_MRA:.5:.95:.05",
+        "_accuracy",
+        "_vci_metric",
+    )
+
+    @classmethod
+    def get_task_type(cls, task: str) -> str:
+        if task in cls.TASK_TYPES['MCQ']:
             return 'MCQ'
-        elif task in NA_QUESTION_TYPES:
+        if task in cls.TASK_TYPES['NA']:
             return 'NA'
-        elif task in SPECIAL_QUESTION_TYPES:
+        if task in cls.TASK_TYPES['SPECIAL']:
             return 'SPECIAL'
-        else:
-            raise ValueError(f"Unsupported SparBench task type: {task}")
+        raise ValueError(f"Unsupported SparBench task type: {task}")
+
+    @staticmethod
+    def _metric_base_task(metric_key: str) -> str | None:
+        """
+        Restore the base task name from the metric key
+        """
+        if metric_key in ("overall", "Low", "Middle", "High"):
+            return None
+
+        suffixes = [
+            "_MRA:.5:.95:.05",
+            "_accuracy",
+            "_vci_metric",
+        ]
+        for suf in suffixes:
+            if metric_key.endswith(suf):
+                return metric_key[:-len(suf)]
+        return None
 
     def build_prompt(self, line):
         if self.meta_only:
@@ -76,7 +127,7 @@ class SparBench(ImageBaseDataset):
         elif task_type == 'MCQ':
             post_prompt = ""
             if task in ['position_matching', "camera_motion_infer"]:
-                post_prompt = "The values represent the bounding box coordinates normalized to a 0-1000 scale, with the top-left corner as the origin of the image."
+                post_prompt = "The values represent the bounding box coordinates normalized to a 0-1000 scale, with the top-left corner as the origin of the image."  # noqa: E501
             post_prompt2 = "Answer with the option's letter from the given choices directly."
             prompt = pre_prompt + "\n" + question + "\n" + post_prompt + "\n" + post_prompt2
 
@@ -98,12 +149,8 @@ class SparBench(ImageBaseDataset):
         return msgs
 
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.spatial_rel_bench.cal_scores import (
-            compute_mcq_score, compute_na_score, mean_relative_accuracy
-        )
-
         suffix = eval_file.split('.')[-1]
-        result_file = eval_file.replace(f'.{suffix}', f'_result.pkl')
+        result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
 
         data = load(eval_file)
         data = data.sort_values(by='index')
@@ -112,8 +159,8 @@ class SparBench(ImageBaseDataset):
         data['task_type'] = data['task'].apply(self.get_task_type)
 
         mcq_data = data[data['task_type'] == 'MCQ'].copy()
-        na_data = data[data['task_type'] == 'NA' ].copy()
-        special_data = data[data['task_type'] == 'SPECIAL' ].copy()
+        na_data = data[data['task_type'] == 'NA'].copy()
+        special_data = data[data['task_type'] == 'SPECIAL'].copy()
 
         print(f"[split] MCQ={len(mcq_data)}, NA={len(na_data)}, SPECIAL={len(special_data)}")
 
@@ -123,12 +170,12 @@ class SparBench(ImageBaseDataset):
             mcq_scored = mcq_data
 
         if len(na_data):
-            na_scored  = compute_na_score(na_data)
+            na_scored = compute_na_score(na_data)
         else:
             na_scored = na_data
 
         if len(special_data):
-            sp_scored  = self.compute_special_score(special_data)
+            sp_scored = self.compute_special_score(special_data)
         else:
             sp_scored = special_data
 
@@ -144,7 +191,6 @@ class SparBench(ImageBaseDataset):
                 'special_scored': sp_scored,
                 'summary': summary
             }
-            import pickle
             with open(result_file, 'wb') as f:
                 pickle.dump(to_dump, f)
             print(f"[save] result saved to {result_file}")
@@ -188,7 +234,7 @@ class SparBench(ImageBaseDataset):
                 'hit', 'MRA:.5:.95:.05', 'vci_metric'
             ]
             ordered = [c for c in prefer_front if c in merged.columns] + \
-                    [c for c in merged.columns if c not in prefer_front]
+                [c for c in merged.columns if c not in prefer_front]
             merged = merged[ordered]
 
             with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
@@ -201,18 +247,23 @@ class SparBench(ImageBaseDataset):
 
         # ---- save acc.tsv ----
         try:
-            summary_clean = {
-                k: v for k, v in summary.items()
+            summary_clean = OrderedDict(
+                (k, v) for k, v in summary.items()
                 if k not in ('tabulated_keys', 'tabulated_results')
-            }
+            )
 
-            front_keys = ['overall', 'Low', 'Middle', 'High']
-            other_keys = [k for k in summary_clean.keys() if k not in front_keys]
+            cols = list(summary_clean.keys())
 
-            final_order = front_keys + other_keys
+            # overall / Low / Middle / High
+            row_summary = {c: None for c in cols}
+            for k in ('overall', 'Low', 'Middle', 'High'):
+                if k in summary_clean:
+                    row_summary[k] = summary_clean[k]
 
-            acc_df = pd.DataFrame({k: [summary_clean.get(k, None)] for k in final_order})
+            # overall, Low, Middle, High && subtasks
+            row_full = dict(summary_clean)
 
+            acc_df = pd.DataFrame([row_summary, row_full], columns=cols)
             acc_df.to_csv(acc_tsv_path, sep="\t", index=False)
             print(f"[save] accuracy table saved to {acc_tsv_path}")
 
@@ -254,7 +305,7 @@ class SparBench(ImageBaseDataset):
         vals = []
         for a_pos, a_neg in action_order:
             pred_v = p.get(a_pos, 0.0) - p.get(a_neg, 0.0)
-            gt_v   = g.get(a_pos, 0.0) - g.get(a_neg, 0.0)
+            gt_v = g.get(a_pos, 0.0) - g.get(a_neg, 0.0)
             vals.append(mean_relative_accuracy(pred_v, gt_v, .5, .95, .05))
         return float(np.mean(vals)) if len(vals) else 0.0
 
@@ -273,53 +324,71 @@ class SparBench(ImageBaseDataset):
         return df
 
     def _aggregate(self, mcq_df, na_df, sp_df) -> dict:
-        out = {}
+        task_metrics: dict[str, float] = {}
 
+        # MCQ
         if len(mcq_df):
-            for task, sub in mcq_df.groupby('task'):
-                metric_name = 'hit'
-                out[f'{task}_accuracy'] = float(sub[metric_name].mean())
+            for task, sub in mcq_df.groupby('task', sort=False):
+                task_metrics[f'{task}_accuracy'] = float(sub['hit'].mean())
 
+        # NA
         if len(na_df):
-            for task, sub in na_df.groupby('task'):
-                out[f'{task}_MRA:.5:.95:.05'] = float(sub['MRA:.5:.95:.05'].mean())
+            for task, sub in na_df.groupby('task', sort=False):
+                task_metrics[f'{task}_MRA:.5:.95:.05'] = float(sub['MRA:.5:.95:.05'].mean())
 
+        # SPECIAL
         if len(sp_df):
-            for task, sub in sp_df.groupby('task'):
+            for task, sub in sp_df.groupby('task', sort=False):
                 if 'vci_metric' in sub.columns:
-                    out[f'{task}_vci_metric'] = float(sub['vci_metric'].mean())
+                    task_metrics[f'{task}_vci_metric'] = float(sub['vci_metric'].mean())
 
-        if len(out):
-            out['overall'] = float(np.mean(list(out.values())))
+        # overall
+        if task_metrics:
+            overall = float(np.mean(list(task_metrics.values())))
         else:
-            out['overall'] = 0.0
+            overall = 0.0
 
-        Low = set([
-            "depth_prediction_oc","depth_prediction_oo",
-            "distance_prediction_oc","distance_prediction_oo",
-            "depth_prediction_oc_mv","depth_prediction_oo_mv",
-            "distance_prediction_oo_mv","distance_prediction_oc_mv",
-        ])
-        Middle = set(["view_change_infer","position_matching","camera_motion_infer"])
-        High = set([
-            "obj_spatial_relation_oo","obj_spatial_relation_oc_mv","obj_spatial_relation_oo_mv",
-            "spatial_imagination_oc","spatial_imagination_oo","spatial_imagination_oc_mv","spatial_imagination_oo_mv",
-            "distance_infer_center_oo","distance_infer_center_oo_mv",
-        ])
+        # base_task -> metric_key
+        base_to_key: dict[str, str] = {}
+        for k in task_metrics.keys():
+            base = self._metric_base_task(k)
+            if base is not None:
+                base_to_key[base] = k
 
-        lows, mids, highs = [], [], []
-        for k, v in out.items():
-            if k == 'overall':
-                continue
-            task_name = "_".join(k.split("_")[:-1])
-            if task_name in Low:
-                lows.append(v)
-            elif task_name in Middle:
-                mids.append(v)
-            elif task_name in High:
-                highs.append(v)
+        def mean_group(task_list: list[str]) -> float:
+            vals = []
+            for t in task_list:
+                key = base_to_key.get(t, None)
+                if key is not None:
+                    vals.append(task_metrics[key])
+            return float(np.mean(vals)) if vals else 0.0
 
-        out['Low'] = float(np.mean(lows)) if lows else 0.0
-        out['Middle'] = float(np.mean(mids)) if mids else 0.0
-        out['High'] = float(np.mean(highs)) if highs else 0.0
+        low_val = mean_group(self.LOW_TASKS)
+        mid_val = mean_group(self.MIDDLE_TASKS)
+        high_val = mean_group(self.HIGH_TASKS)
+
+        out = OrderedDict()
+        out['overall'] = overall
+        out['Low'] = low_val
+        out['Middle'] = mid_val
+        out['High'] = high_val
+
+        # Low
+        for t in self.LOW_TASKS:
+            key = base_to_key.get(t, None)
+            if key is not None:
+                out[key] = task_metrics[key]
+
+        # Middle
+        for t in self.MIDDLE_TASKS:
+            key = base_to_key.get(t, None)
+            if key is not None:
+                out[key] = task_metrics[key]
+
+        # High
+        for t in self.HIGH_TASKS:
+            key = base_to_key.get(t, None)
+            if key is not None:
+                out[key] = task_metrics[key]
+
         return out
