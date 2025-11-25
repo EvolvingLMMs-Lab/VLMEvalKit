@@ -34,7 +34,7 @@ class SpatialVizBench(ImageMCQDataset):
     ])
 
     def __init__(self, dataset, skip_noimg=True):
-        super().__init__(dataset='SpatialVizBench', skip_noimg=skip_noimg)
+        super().__init__(dataset=dataset, skip_noimg=skip_noimg)
 
         self.use_cot = self.parse_dataset_name(dataset)
 

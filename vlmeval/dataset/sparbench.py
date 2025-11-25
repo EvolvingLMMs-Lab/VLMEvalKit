@@ -21,12 +21,11 @@ class SparBench(ImageBaseDataset):
     LMUData_root = LMUDataRoot()
     DATASET_URL = {}
 
+    # TODO: change this
     DATASET_URL['SparBench'] = '/mnt/aigc/wangyubo/data/UG/data/benchmark/spar_zoe/tsv/SparBench.tsv'
     DATASET_URL['SparBench_50'] = '/mnt/aigc/wangyubo/data/UG/data/benchmark/spar_zoe/tsv/SparBench_50.tsv'
 
     DATASET_MD5 = {key: None for key in DATASET_URL}
-
-    print(f"spar urls: {DATASET_URL}")
 
     @classmethod
     def get_task_type(self, task):
