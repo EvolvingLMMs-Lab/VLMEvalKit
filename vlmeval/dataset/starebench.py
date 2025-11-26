@@ -5,7 +5,6 @@ import base64
 import pandas as pd
 import warnings
 
-from tqdm import tqdm
 from io import BytesIO
 from PIL import Image
 from collections import OrderedDict
@@ -13,18 +12,17 @@ from huggingface_hub import snapshot_download
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .image_mcq import ImageMCQDataset
-from ..smp.file import LMUDataRoot, load
+from ..smp.file import load
 from ..smp.misc import toliststr, get_cache_path, modelscope_flag_set
 
 
 class StareBench(ImageMCQDataset):
     TYPE = 'MCQ'
 
-    LMUData_root = LMUDataRoot()
-    DATASET_URL = {}
-
-    DATASET_URL['StareBench'] = os.path.join(LMUData_root, 'StareBench.tsv')
-    DATASET_URL['StareBench_CoT'] = os.path.join(LMUData_root, 'StareBench.tsv')
+    DATASET_URL = {
+        'StareBench': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/StareBench.tsv',
+        'StareBench_CoT': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/StareBench_CoT.tsv'
+    }
 
     DATASET_MD5 = {key: None for key in DATASET_URL}
 
@@ -239,7 +237,7 @@ class StareBench(ImageMCQDataset):
             # Zero-Shot CoT (STARE codebase default setting)
             post_prompt = "Please solve the problem step by step."
 
-        prompt = "\n".join([mcq_format, post_prompt,])
+        prompt = "\n".join([mcq_format, post_prompt])
 
         print(f"prompt: {prompt}")
 
@@ -350,10 +348,10 @@ class StareBench(ImageMCQDataset):
         """
         Compute F1 for one binary category DataFrame.
 
-        Requires columns: question, gold_letter, pred_letter
+        Requires columns: question, answer, pred_extracted
         Logic:
           1) Parse A/B/... -> yes/no mapping from question
-          2) Map gold_letter / pred_letter to yes/no
+          2) Map answer / pred_extracted to yes/no
           3) Call _f1_binary_yn
         """
         if len(df_cat) == 0:
@@ -399,12 +397,12 @@ class StareBench(ImageMCQDataset):
 
         term_2d = cls._mean_ignore_none([g('2d_trans'), g('2d_trans_vsim')])
         term_3d = cls._mean_ignore_none([g('3d_trans'), g('3d_trans_vsim')])
-        term_cube = cls._mean_ignore_none([g('cube_net'), g('cube_net_vsim')])
-        term_tang = cls._mean_ignore_none([g('tangram'), g('tangram_vsim')])
+        term_fold = cls._mean_ignore_none([g('folding_nets'), g('folding_nets_vsim')])
+        term_tang = cls._mean_ignore_none([g('tangram_puzzle'), g('tangram_puzzle_vsim')])
         term_temp = g('temporal')
         term_pers = g('perspective')
 
-        terms = [term_2d, term_3d, term_cube, term_tang, term_temp, term_pers]
+        terms = [term_2d, term_3d, term_fold, term_tang, term_temp, term_pers]
         if force_divisor_6:
             usable = [(t if t is not None else 0.0) for t in terms]
             macro = None if all(t is None for t in terms) else float(sum(usable) / 6.0)
@@ -424,9 +422,7 @@ class StareBench(ImageMCQDataset):
             (2D, 3D, cube, tangram, temporal, perspective)
           where MCQ uses accuracy, binary uses F1.
         """
-        from pathlib import Path
         from .utils.spatial_bench.cal_scores import compute_mcq_score
-        # 如果你不再用 CAA，就不要 import compute_caa_score
 
         suffix = eval_file.split('.')[-1]
         result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
@@ -446,10 +442,7 @@ class StareBench(ImageMCQDataset):
         # 2. compute per-sample hit (MCQ)
         mcq_scored = compute_mcq_score(data.copy())
 
-        # 3. gold_letter / pred_letter
-        mcq_scored = mcq_scored.copy()
-
-        # 4. normalize category column (prefer category_agg, fallback to category)
+        # 3. normalize category column
         if 'category_agg' in mcq_scored.columns:
             cat_col = 'category_agg'
         elif 'category' in mcq_scored.columns:
@@ -458,14 +451,13 @@ class StareBench(ImageMCQDataset):
             cat_col = None
 
         if cat_col is not None:
-            # lower 后与 task_category() 定义的类别一致
             mcq_scored['bench_category'] = (
                 mcq_scored[cat_col].astype(str).str.strip().str.lower()
             )
         else:
             mcq_scored['bench_category'] = 'all'
 
-        # 5. overall accuracy
+        # 4. overall accuracy
         summary = OrderedDict()
         if len(mcq_scored):
             overall_acc = float(mcq_scored['hit'].mean())
@@ -474,7 +466,7 @@ class StareBench(ImageMCQDataset):
 
         summary['overall_accuracy'] = overall_acc * 100.0
 
-        # 6. per-category acc / f1 + macro scores
+        # 5. per-category acc / f1 + macro scores
         scores_for_macro = {}
         rows = []
         cat_order = self._task_category()
@@ -495,7 +487,6 @@ class StareBench(ImageMCQDataset):
             # macro: MCQ uses acc, binary uses F1
             scores_for_macro[cat] = (f1_c if cat in binary_set else acc_c)
 
-            # metrics to log
             summary[f'{cat}_accuracy'] = acc_c * 100.0
             if cat in binary_set and f1_c is not None:
                 summary[f'{cat}_f1'] = float(f1_c) * 100.0
@@ -509,12 +500,12 @@ class StareBench(ImageMCQDataset):
 
         per_category_df = pd.DataFrame(rows, columns=['category', 'n', 'acc', 'f1'])
 
-        # 7. macro (6-term)
+        # 6. macro (6-term)
         macro_avg = self._macro_from_scores(scores_for_macro, force_divisor_6=False)
         if macro_avg is not None:
             summary['macro'] = float(macro_avg) * 100.0
 
-        # 8. tabulate
+        # 7. tabulate
         tab_keys = ", ".join(list(summary.keys()))
         tab_vals = ", ".join(
             [f"{v:.3f}" for v in summary.values() if isinstance(v, (int, float))]
@@ -522,7 +513,7 @@ class StareBench(ImageMCQDataset):
         summary['tabulated_keys'] = tab_keys
         summary['tabulated_results'] = tab_vals
 
-        # 9. save pkl
+        # 8. save pkl
         try:
             import pickle
             with open(result_file, 'wb') as f:
@@ -534,7 +525,7 @@ class StareBench(ImageMCQDataset):
         except Exception as e:
             warnings.warn(f"[save] failed to save result to {result_file}: {e}")
 
-        # 10. save extract_matching xlsx
+        # 9. save extract_matching xlsx
         try:
             prefer_front = [
                 'index', 'bench_category', 'category', 'category_agg',
@@ -553,7 +544,7 @@ class StareBench(ImageMCQDataset):
         except Exception as e:
             warnings.warn(f"[save] failed to save extract xlsx to {xlsx_path}: {e}")
 
-        # 11. save metrics tsv (overall acc + per-category acc / f1 + macro)
+        # 10. save metrics tsv
         try:
             metric_rows = []
             for k, v in summary.items():
@@ -571,9 +562,10 @@ class StareBench(ImageMCQDataset):
             metric_order += [k for k in acc_df['metric'].tolist()
                              if k not in metric_order]
 
-            acc_df = acc_df.set_index('metric').reindex(metric_order).reset_index()
-            acc_df = acc_df.dropna(subset=['value'])
-            acc_df.to_csv(acc_tsv_path, sep='\t', index=False)
+            acc_df = acc_df.set_index('metric').reindex(metric_order).dropna(subset=['value'])
+            wide = acc_df.T
+            wide.to_csv(acc_tsv_path, sep='\t', index=False, float_format='%.4f')
+
             print(f"[save] accuracy/F1/macro table saved to {acc_tsv_path}")
         except Exception as e:
             warnings.warn(f"[save] failed to save acc tsv to {acc_tsv_path}: {e}")

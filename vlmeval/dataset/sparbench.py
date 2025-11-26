@@ -8,7 +8,7 @@ from collections import OrderedDict
 from ..smp.misc import toliststr
 from ..smp.file import load
 from .image_base import ImageBaseDataset
-from .utils.spatial_rel_bench.cal_scores import (
+from .utils.spatial_bench.cal_scores import (
     compute_mcq_score, compute_na_score, mean_relative_accuracy
 )
 
