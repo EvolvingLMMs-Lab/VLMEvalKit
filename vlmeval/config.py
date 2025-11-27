@@ -279,6 +279,15 @@ api_models = {
         max_tokens=2**14,
         timeout=300,
     ),
+    "gpt-5.1-2025-11-13": partial(
+        GPT4V,
+        model="gpt-5.1-2025-11-13",
+        img_detail="high",
+        retry=3,
+        verbose=False,
+        max_tokens=2**14,
+        timeout=300,
+    ),
     # Gemini
     "GeminiPro1-0": partial(
         Gemini, model="gemini-1.0-pro", temperature=0, retry=10
@@ -1885,12 +1894,30 @@ rbdashmm_api_series_lmdeploy = {
         temperature=0,
         retry=3,
         timeout=600
+    ),
+    "rbdashmm3_5_38B_api": partial(
+        RBdashMMChat3_5_38B_API,
+        api_base="http://0.0.0.0:23333/v1/chat/completions",
+        temperature=0,
+        retry=3,
+        timeout=600
+    ),
+    "rbdashmm3_78B_api": partial(
+        RBdashMMChat3_78B_API,
+        api_base="http://0.0.0.0:23333/v1/chat/completions",
+        temperature=0,
+        retry=3,
+        timeout=600
     )
 }
 
 logics_series = {
     "Logics-Thinking-8B": partial(Logics_Thinking,model_path='Logics-MLLM/Logics-Thinking-8B'),
     "Logics-Thinking-32B": partial(Logics_Thinking,model_path='Logics-MLLM/Logics-Thinking-32B'),
+}
+
+insight_v_series = {
+    "insightv": partial(InsightV, pretrained_reason="THUdyh/Insight-V-Reason-LLaMA3", pretrained_summary="THUdyh/Insight-V-Summary-LLaMA3"),
 }
 
 cosmos_series = {
@@ -2050,7 +2077,7 @@ model_groups = [
     long_vita_series, ristretto_series, kimi_series, aguvis_series, hawkvl_series,
     flash_vl, kimi_vllm_series, oryx_series, treevgr_series, varco_vision_series, qtunevl_series, 
     xvl_series, thyme_series, logics_series, cosmos_series, keye_series, qianfanvl_series, 
-    lfm2vl_series, rbdashmm_api_series_lmdeploy, interns1_series
+    lfm2vl_series, rbdashmm_api_series_lmdeploy, interns1_series, insight_v_series
 ]
 
 # add by EASI team 
