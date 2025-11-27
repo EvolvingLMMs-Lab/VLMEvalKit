@@ -193,7 +193,6 @@ class Qwen2VLChat(Qwen2VLPromptMixin, BaseModel):
         post_process: bool = False,  # if True, will try to only extract stuff in the last \boxed{}.
         verbose: bool = False,
         use_audio_in_video: bool = False,
-        model_name: str = None,
         **kwargs,
     ):
         super().__init__(use_custom_prompt=use_custom_prompt)
@@ -232,7 +231,6 @@ class Qwen2VLChat(Qwen2VLPromptMixin, BaseModel):
             model_path = cache_path
 
         self.model_path = model_path
-        self.model_name = model_name if model_name is not None else model_path
 
         MODEL_CLS = None
 

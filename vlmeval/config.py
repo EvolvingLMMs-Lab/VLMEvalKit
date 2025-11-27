@@ -1949,7 +1949,6 @@ spatial_related_models = {
         min_pixels=1280 * 28 * 28,
         max_pixels=16384 * 28 * 28,
         use_custom_prompt=False,
-        model_name="SpatialLadder-3B_qwen25"
     ),
     "Spatial-MLLM-subset-sft": partial(
         SpatialMLLM,
@@ -1966,7 +1965,6 @@ spatial_related_models = {
         min_pixels=1280 * 28 * 28,
         max_pixels=16384 * 28 * 28,
         use_custom_prompt=False,
-        model_name="VST-3B-SFT_qwen25"
     ),
     
     # 7B models
@@ -1976,7 +1974,6 @@ spatial_related_models = {
         min_pixels=1280 * 28 * 28,
         max_pixels=16384 * 28 * 28,
         use_custom_prompt=False,
-        model_name='SpaceR-SFT-7B_qwen25'
     ),
     "ViLaSR": partial(
         Qwen2VLChat,
@@ -1984,7 +1981,6 @@ spatial_related_models = {
         min_pixels=1280 * 28 * 28,
         max_pixels=16384 * 28 * 28,
         use_custom_prompt=False,
-        model_name="ViLaSR_qwen25"
     ),
     "VST-7B-SFT": partial(
         Qwen2VLChat,
@@ -1992,7 +1988,6 @@ spatial_related_models = {
         min_pixels=1280 * 28 * 28,
         max_pixels=16384 * 28 * 28,
         use_custom_prompt=False,
-        model_name="VST-7B-SFT_qwen25"
     ),
 }
 
