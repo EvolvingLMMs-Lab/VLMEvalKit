@@ -11,7 +11,8 @@ from .image_mcq import ImageMCQDataset
 from ..smp.file import load
 from ..smp.misc import toliststr, get_cache_path
 
-
+# Prompt template adapted from the official OmniSpatial codebase:
+# https://github.com/qizekun/OmniSpatial/tree/main
 RE_FORMAT = """
 End your answer with a separate line formatted exactly as:
 
@@ -78,14 +79,21 @@ If uncertain, pick the most plausible option—never refuse or reply “insuffic
 class OmniSpatialBench(ImageMCQDataset):
     TYPE = 'MCQ'
 
-    DATASET_URL = {
-        'OmniSpatialBench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OmniSpatialBench.tsv',  # noqa: E501
-        'OmniSpatialBench_default': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OmniSpatialBench.tsv',  # noqa: E501
-        'OmniSpatialBench_zeroshot_cot': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OmniSpatialBench.tsv',  # noqa: E501
-        'OmniSpatialBench_manual_cot': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OmniSpatialBench.tsv',  # noqa: E501
-    }
+    OMNI_TSV_URL = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OmniSpatialBench.tsv'
 
-    DATASET_MD5 = {key: None for key in DATASET_URL}
+    VARIANTS = [
+        'OmniSpatialBench',
+        'OmniSpatialBench_default',
+        'OmniSpatialBench_zeroshot_cot',
+        'OmniSpatialBench_manual_cot',
+    ]
+
+    DATASET_URL = {}
+    DATASET_MD5 = {}
+
+    for name in VARIANTS:
+        DATASET_URL[name] = OMNI_TSV_URL
+        DATASET_MD5[name] = None
 
     SYS_PROMPTS = {
         "default": DEFAULT_SYSTEM_PROMPT,
