@@ -206,10 +206,12 @@ class VsiBench(VideoBaseDataset):
             formatted_options = '\n'.join(options)
 
         # following vsi prompt format
+        prompt_lst = [self.OFFICAL_PRE_PROMPT, question]
         if task_type == 'MCQ':
-            prompt = "\n".join([self.OFFICAL_PRE_PROMPT, question, formatted_options, self.OFFICAL_MCQ_POST_PROMPT])
+            prompt_lst += [formatted_options, self.OFFICAL_MCQ_POST_PROMPT]
         else:
-            prompt = "\n".join([self.OFFICAL_PRE_PROMPT, question, self.OFFICAL_VQA_POST_PROMPT])
+            prompt_lst += [self.OFFICAL_VQA_POST_PROMPT]
+        prompt = '\n'.join(prompt_lst)
 
         message = []
 
