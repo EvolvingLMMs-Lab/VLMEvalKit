@@ -1,17 +1,18 @@
-from __future__ import annotations
-
+# from __future__ import annotations
 import os
 import sys
 import warnings
 import math
 import logging
+import json
 
 import torch
 from transformers import StoppingCriteria
+from huggingface_hub import snapshot_download
 
 from ..base import BaseModel
 from .prompt import Qwen2VLPromptMixin
-from ...smp import get_gpu_memory, listinstr
+from ...smp import get_gpu_memory, listinstr, get_cache_path
 from ...dataset import DATASET_MODALITY
 
 VLLM_MAX_IMAGE_INPUT_NUM = 24
@@ -220,28 +221,73 @@ class Qwen2VLChat(Qwen2VLPromptMixin, BaseModel):
                   the fps/nframe setting in video dataset is omitted")
         self.use_audio_in_video = use_audio_in_video
         self.FRAME_FACTOR = 2
+
         assert model_path is not None
+
+        # TODO：option 1：First, manually download the model, then read the architecture from config.json.
+        # elegant, but it involves the most significant modifications to the source code.
+        if not os.path.exists(model_path):
+            cache_path = get_cache_path(model_path, repo_type='models')
+            if cache_path is None:
+                snapshot_download(repo_id=model_path)
+                cache_path = get_cache_path(model_path, repo_type='models')
+            model_path = cache_path
+
         self.model_path = model_path
         self.model_name = model_name if model_name is not None else model_path
 
         MODEL_CLS = None
 
-        if listinstr(['omni'], self.model_name.lower()):
+        print(f"self.model_path: {self.model_path}")
+
+        cfg_json_path = os.path.join(self.model_path, 'config.json')
+        assert cfg_json_path is not None, 'Qwen series models require a config.json file to specify the architecture.'
+
+        with open(cfg_json_path, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+            architectures = str(cfg.get("architectures", None)).lower()
+
+        if listinstr(['omni'], architectures):
             try:
                 from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcessor
             except Exception as err:
                 logging.critical("pip install git+https://github.com/huggingface/transformers@3a1ead0aabed473eafe527915eea8c197d424356")  # noqa: E501
                 raise err
             MODEL_CLS = Qwen2_5OmniForConditionalGeneration
-            self.processor = Qwen2_5OmniProcessor.from_pretrained(model_path)
-        elif listinstr(['2.5', '2_5', 'qwen25', 'mimo'], self.model_name.lower()):
+            self.processor = Qwen2_5OmniProcessor.from_pretrained(self.model_path)
+
+        elif listinstr(['qwen2_5'], architectures):
             from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
             MODEL_CLS = Qwen2_5_VLForConditionalGeneration
-            self.processor = AutoProcessor.from_pretrained(model_path)
+            self.processor = AutoProcessor.from_pretrained(self.model_path)
+
         else:
             from transformers import Qwen2VLForConditionalGeneration, Qwen2VLProcessor
             MODEL_CLS = Qwen2VLForConditionalGeneration
-            self.processor = Qwen2VLProcessor.from_pretrained(model_path)
+            self.processor = Qwen2VLProcessor.from_pretrained(self.model_path)
+
+        # TODO: option 2: Following vlmevalkit, use listinstr to determine the architecture.
+        # This is a bit ugly, and the list gets longer and longer. But it requires minimal changes to the source code.
+
+        # if listinstr(['omni'], self.model_name.lower()):
+        #     try:
+        #         from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcessor
+        #     except Exception as err:
+        #         logging.critical("pip install git+https://github.com/huggingface/transformers@3a1ead0aabed473eafe527915eea8c197d424356")  # noqa: E501
+        #         raise err
+        #     MODEL_CLS = Qwen2_5OmniForConditionalGeneration
+        #     self.processor = Qwen2_5OmniProcessor.from_pretrained(model_path)
+        # elif listinstr(['2.5', '2_5', 'qwen25', 'mimo', 'vst', 'vilasr', 'spacer', 'spatialladder'], self.model_name.lower()):  # noqa: E501
+        #     from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+        #     MODEL_CLS = Qwen2_5_VLForConditionalGeneration
+        #     self.processor = AutoProcessor.from_pretrained(model_path)
+        # else:
+        #     from transformers import Qwen2VLForConditionalGeneration, Qwen2VLProcessor
+        #     MODEL_CLS = Qwen2VLForConditionalGeneration
+        #     self.processor = Qwen2VLProcessor.from_pretrained(model_path)
+
+        # TODO: option 3: add model_name kwarg in init, like peter did.
+        # It's still a bit ugly, and the changes to the source code are minimal.
 
         gpu_mems = get_gpu_memory()
         max_gpu_mem = max(gpu_mems) if gpu_mems != [] else -1
@@ -265,7 +311,6 @@ class Qwen2VLChat(Qwen2VLPromptMixin, BaseModel):
             logging.info(
                 f'Using vLLM for {self.model_path} inference with {tp_size} GPUs (available: {gpu_count})'
             )
-            import os
             if os.environ.get('VLLM_WORKER_MULTIPROC_METHOD') != 'spawn':
                 logging.warning(
                     'VLLM_WORKER_MULTIPROC_METHOD is not set to spawn.'
