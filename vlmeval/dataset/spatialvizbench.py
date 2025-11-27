@@ -6,7 +6,6 @@ from collections import OrderedDict
 from .image_mcq import ImageMCQDataset
 from ..smp.file import LMUDataRoot, load
 from ..smp.misc import toliststr
-from vlmeval.smp.log import get_logger
 
 
 class SpatialVizBench(ImageMCQDataset):
@@ -25,11 +24,9 @@ class SpatialVizBench(ImageMCQDataset):
     def __init__(self, dataset, skip_noimg=True):
         super().__init__(dataset=dataset, skip_noimg=skip_noimg)
 
-        self.logger = get_logger(__name__)
-
         self._CATEGORY_TASK_ORDER = None
         self.use_cot = self.parse_dataset_name(dataset)
-        self.logger.info(f"Evaluate {dataset} with CoT = {self.use_cot}")
+        print(f"Evaluate {dataset} with CoT = {self.use_cot}")
 
     @staticmethod
     def parse_dataset_name(name: str) -> bool:
@@ -87,8 +84,6 @@ class SpatialVizBench(ImageMCQDataset):
             )
 
         prompt = pre_prompt + "\n" + "Question:" + question + '\n' + options_text
-
-        print(f"Final input prompt: {prompt}")
 
         msgs = []
         if isinstance(tgt_path, list):

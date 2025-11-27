@@ -16,10 +16,10 @@ from .utils.spatial_bench.cal_scores import (
 class SparBench(ImageBaseDataset):
     TYPE = 'VQA'
 
-    DATASET_URL = {}
-
-    DATASET_URL['SparBench'] = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SparBench.tsv'  # noqa: E501
-    DATASET_URL['SparBench_tiny'] = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SparBench_tiny.tsv'  # noqa: E501
+    DATASET_URL = {
+        'SparBench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SparBench.tsv',  # noqa: E501
+        'SparBench_tiny': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SparBench_tiny.tsv'  # noqa: E501
+    }
 
     DATASET_MD5 = {key: None for key in DATASET_URL}
 

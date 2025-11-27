@@ -20,8 +20,8 @@ class StareBench(ImageMCQDataset):
     TYPE = 'MCQ'
 
     DATASET_URL = {
-        'StareBench': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/StareBench.tsv',
-        'StareBench_CoT': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/StareBench_CoT.tsv'
+        'StareBench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/StareBench.tsv',  # noqa: E501
+        'StareBench_CoT': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/StareBench.tsv'  # noqa: E501
     }
 
     DATASET_MD5 = {key: None for key in DATASET_URL}
@@ -238,8 +238,6 @@ class StareBench(ImageMCQDataset):
             post_prompt = "Please solve the problem step by step."
 
         prompt = "\n".join([mcq_format, post_prompt])
-
-        print(f"prompt: {prompt}")
 
         msgs = self.build_msgs(tgt_path, prompt)
 

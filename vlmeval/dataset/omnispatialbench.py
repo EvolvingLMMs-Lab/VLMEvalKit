@@ -8,8 +8,8 @@ from collections import OrderedDict
 from huggingface_hub import snapshot_download
 
 from .image_mcq import ImageMCQDataset
-from ..smp.file import LMUDataRoot, load
-from ..smp.misc import toliststr, get_cache_path, modelscope_flag_set
+from ..smp.file import load
+from ..smp.misc import toliststr, get_cache_path
 
 
 RE_FORMAT = """
@@ -78,17 +78,17 @@ If uncertain, pick the most plausible option—never refuse or reply “insuffic
 class OmniSpatialBench(ImageMCQDataset):
     TYPE = 'MCQ'
 
-    LMUData_root = LMUDataRoot()
-    DATASET_URL = {}
-
-    # full set
     DATASET_URL = {
-        'OmniSpatialBench': os.path.join(LMUData_root, 'OmniSpatialBench.tsv'),
+        'OmniSpatialBench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OmniSpatialBench.tsv',  # noqa: E501
+        'OmniSpatialBench_default': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OmniSpatialBench.tsv',  # noqa: E501
+        'OmniSpatialBench_zeroshot_cot': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OmniSpatialBench.tsv',  # noqa: E501
+        'OmniSpatialBench_manual_cot': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OmniSpatialBench.tsv',  # noqa: E501
     }
 
-    # subset
+    DATASET_MD5 = {key: None for key in DATASET_URL}
+
     SYS_PROMPTS = {
-        "none": DEFAULT_SYSTEM_PROMPT,
+        "default": DEFAULT_SYSTEM_PROMPT,
         "zeroshot_cot": ZERO_SHOT_COT_SYSTEM_PROMPT,
         "manual_cot": MANUAL_COT_SYSTEM_PROMPT,
     }
@@ -100,29 +100,13 @@ class OmniSpatialBench(ImageMCQDataset):
         ("Perspective_Taking", ["Egocentric", "Allocentric", "Hypothetical"]),
     ])
 
-    for prompt_type in SYS_PROMPTS.keys():
-        name = f"OmniSpatialBench_{prompt_type}"
-        path = os.path.join(LMUData_root, 'OmniSpatialBench.tsv')
-        DATASET_URL[name] = path
-
-    DATASET_MD5 = {key: None for key in DATASET_URL}
-
     def __init__(self, dataset, skip_noimg=True):
         super().__init__(dataset=dataset, skip_noimg=skip_noimg)
         self.prompt_mode = self.parse_dataset_name(dataset)
 
     def parse_dataset_name(self, name: str) -> str:
-        """
-        解析 dataset 名字中的 prompt_type，
-        返回 SYS_PROMPTS 的 key，例如:
-            OmniSpatialBench_none          -> "none"
-            OmniSpatialBench_zeroshot_cot  -> "zeroshot_cot"
-            OmniSpatialBench_manual_cot    -> "manual_cot"
-
-        若未匹配，则返回 "none" 作为默认值。
-        """
         if not isinstance(name, str):
-            return "none"
+            return ""
 
         lower = name.lower()
 
@@ -130,7 +114,7 @@ class OmniSpatialBench(ImageMCQDataset):
             if lower.endswith(f"_{key}".lower()):
                 return key
 
-        return "none"
+        return ""
 
     def prepare_tsv(self, url, file_md5=None, repo_id='qizekun/OmniSpatial'):
         data = super().prepare_tsv(url, file_md5)
@@ -232,15 +216,18 @@ class OmniSpatialBench(ImageMCQDataset):
             for cand in string.ascii_uppercase
             if cand in line and not pd.isna(line[cand])
         }
+        option_text = ''
+        for key, item in options.items():
+            option_text += f'\n{key}. {item}'
 
         # prompt format from omnispatial codebase
-        system_prompt = self.SYS_PROMPTS[self.prompt_mode]
+        if self.prompt_mode in self.SYS_PROMPTS.keys():
+            system_prompt = self.SYS_PROMPTS[self.prompt_mode]
+            prompt = system_prompt + '\n' + RE_FORMAT + '\n\n' + question + option_text
 
-        prompt = system_prompt + '\n' + RE_FORMAT + '\n\n' + question
-        for key, item in options.items():
-            prompt += f'\n{key}. {item}'
-
-        print(f"prompt: {prompt}")
+        # EASI also provide direct qa format
+        else:
+            prompt = question + option_text + "\nAnswer directly with the option letter from the given choices. "
 
         msgs = []
         if isinstance(tgt_path, list):
@@ -248,8 +235,6 @@ class OmniSpatialBench(ImageMCQDataset):
         else:
             msgs = [dict(type='image', value=tgt_path)]
         msgs.append(dict(type='text', value=prompt))
-
-        print(f"msgs: {msgs}")
 
         return msgs
 
@@ -271,7 +256,6 @@ class OmniSpatialBench(ImageMCQDataset):
         pretty = OrderedDict()
         pretty['overall'] = raw['overall']
 
-        # 按你想要的顺序拼：子类 -> 大类 avg
         for cat, tasks in self.CATEGORY_TASK_ORDER.items():
             for t in tasks:
                 k = f"task.{t}_accuracy"
@@ -281,11 +265,9 @@ class OmniSpatialBench(ImageMCQDataset):
             if cat_key in raw:
                 pretty[cat_key] = raw[cat_key]
 
-        # 最后再补一行 tabulated，方便直接塞 LaTeX
         keys_str = ", ".join(pretty.keys())
         vals_str = ", ".join(f"{v:.3f}" for v in pretty.values())
         pretty['tabulated_keys'] = keys_str
         pretty['tabulated_results'] = vals_str
 
-        # 你如果还想保留原始 raw，可以一起返回
         return pretty
