@@ -181,14 +181,17 @@ egoexobench_dataset = {
 
 video_vsi_dataset = {}
 
-vsi_variants = VsiBench.supported_datasets()
+vsi_subsets = VsiBench.supported_datasets()
 vsi_kwargs = [
+    {"nframe": 128, "suffix": "128frame"},
     {"nframe": 64, "suffix": "64frame"},
     {"nframe": 32, "suffix": "32frame"},
+    {"nframe": 16, "suffix": "16frame"},
+    {"fps": 2.0, "suffix": "2fps"},
     {"fps": 1.0, "suffix": "1fps"},
 ]
 
-for variant in vsi_variants:
+for variant in vsi_subsets:
     for kwarg in vsi_kwargs:
         suffix = kwarg.pop("suffix")
         video_vsi_dataset[f"{variant}_{suffix}"] = partial(VsiBench, dataset=f'{variant}', **kwarg)
