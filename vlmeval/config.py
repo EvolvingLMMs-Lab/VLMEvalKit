@@ -1352,6 +1352,11 @@ cambrian_series = {
     "cambrian_8b": partial(Cambrian, model_path="nyu-visionx/cambrian-8b"),
     "cambrian_13b": partial(Cambrian, model_path="nyu-visionx/cambrian-13b"),
     "cambrian_34b": partial(Cambrian, model_path="nyu-visionx/cambrian-34b"),
+    
+    "cambrian-s-0.5b": partial(CambrianS, model_path="nyu-visionx/Cambrian-S-0.5B"),
+    "cambrian-s-1.5b": partial(CambrianS, model_path="nyu-visionx/Cambrian-S-1.5B"),
+    "cambrian-s-3b": partial(CambrianS, model_path="nyu-visionx/Cambrian-S-3B"),
+    "cambrian-s-7b": partial(CambrianS, model_path="nyu-visionx/Cambrian-S-7B"),
 }
 
 chameleon_series = {
@@ -1938,6 +1943,9 @@ lfm2vl_series = {
     "LFM2-VL-3B": partial(LFM2VL, model_path="LiquidAI/LFM2-VL-3B"),
 }
 
+bagel_series = {
+    "BAGEL-7B-MoT": partial(Bagel, model_path='ByteDance-Seed/BAGEL-7B-MoT'),
+}
 
 spatial_related_models = {
     # 3B models
@@ -1979,6 +1987,14 @@ spatial_related_models = {
         use_custom_prompt=False,
         post_process=True,  # extract answer for evaluation
     ),
+    "VST-3B-SFT": partial(
+        Qwen2VLChat,
+        model_path="rayruiyang/VST-3B-SFT",
+        min_pixels=1280 * 28 * 28,
+        max_pixels=16384 * 28 * 28,
+        use_custom_prompt=False,
+        model_name="VST-3B-SFT_qwen25"
+    ),
     
     # 7B models
     "SpaceR-SFT-7B": partial(
@@ -1997,6 +2013,14 @@ spatial_related_models = {
         use_custom_prompt=False,
         model_name="ViLaSR_qwen25"
     ),
+    "VST-7B-SFT": partial(
+        Qwen2VLChat,
+        model_path="rayruiyang/VST-7B-SFT",
+        min_pixels=1280 * 28 * 28,
+        max_pixels=16384 * 28 * 28,
+        use_custom_prompt=False,
+        model_name="VST-7B-SFT_qwen25"
+    ),
 }
 
 sensenova_si_series = {
@@ -2012,6 +2036,19 @@ sensenova_si_series = {
         use_custom_prompt=False,
         version="V2.0"
     ),
+    "SenseNova-SI-1.1-InternVL3-2B": partial(
+        InternVLChat, 
+        model_path="sensenova/SenseNova-SI-1.1-InternVL3-2B", 
+        use_custom_prompt=False,
+        version="V2.0"
+    ),
+    "SenseNova-SI-1.1-InternVL3-8B": partial(
+        InternVLChat, 
+        model_path="sensenova/SenseNova-SI-1.1-InternVL3-8B", 
+        use_custom_prompt=False,
+        version="V2.0"
+    ),
+    
 }
 
 internvl_groups = [
@@ -2048,8 +2085,8 @@ model_groups = [
     lfm2vl_series, rbdashmm_api_series_lmdeploy, interns1_series, insight_v_series
 ]
 
-model_groups.append(spatial_related_models)
-model_groups.append(sensenova_si_series)
+# add by EASI team 
+model_groups.extend([bagel_series, spatial_related_models, sensenova_si_series])
 
 for grp in model_groups:
     supported_VLM.update(grp)
