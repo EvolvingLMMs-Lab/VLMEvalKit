@@ -4,21 +4,25 @@ import pandas as pd
 from collections import OrderedDict
 
 from .image_mcq import ImageMCQDataset
-from ..smp.file import LMUDataRoot, load
+from ..smp.file import load
 from ..smp.misc import toliststr
 
 
 class SpatialVizBench(ImageMCQDataset):
     TYPE = 'MCQ'
 
-    LMUData_root = LMUDataRoot()
+    SPATIALVIZ_TSV_URL = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SpatialVizBench.tsv'  # noqa: E501
+    SPATIALVIZ_TSV_MD5 = None
 
-    DATASET_URL = {
-        'SpatialVizBench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SpatialVizBench.tsv',  # noqa: E501
-        'SpatialVizBench_CoT':'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SpatialVizBench.tsv'  # noqa: E501
-    }
+    VARIANTS = ['SpatialVizBench', 'SpatialVizBench_CoT']
 
-    DATASET_MD5 = {key: None for key in DATASET_URL}
+    DATASET_URL = {}
+    DATASET_MD5 = {}
+
+    for name in VARIANTS:
+        DATASET_URL[name] = SPATIALVIZ_TSV_URL
+        DATASET_MD5[name] = SPATIALVIZ_TSV_MD5
+
     _CATEGORY_TASK_ORDER = None
 
     def __init__(self, dataset, skip_noimg=True):

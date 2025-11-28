@@ -19,12 +19,17 @@ from ..smp.misc import toliststr, get_cache_path, modelscope_flag_set
 class StareBench(ImageMCQDataset):
     TYPE = 'MCQ'
 
-    DATASET_URL = {
-        'StareBench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/StareBench.tsv',  # noqa: E501
-        'StareBench_CoT': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/StareBench.tsv'  # noqa: E501
-    }
+    STARE_TSV_URL = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/StareBench.tsv'
+    STARE_TSV_MD5 = None
 
-    DATASET_MD5 = {key: None for key in DATASET_URL}
+    VARIANTS = ['StareBench','StareBench_CoT']
+
+    DATASET_URL = {}
+    DATASET_MD5 = {}
+
+    for name in VARIANTS:
+        DATASET_URL[name] = STARE_TSV_URL
+        DATASET_MD5[name] = STARE_TSV_MD5
 
     def __init__(self, dataset, skip_noimg=True):
         super().__init__(dataset=dataset, skip_noimg=skip_noimg)
