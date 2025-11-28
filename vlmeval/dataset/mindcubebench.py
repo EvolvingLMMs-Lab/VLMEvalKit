@@ -4,7 +4,7 @@ import ast
 from tqdm import tqdm
 
 from .image_mcq import ImageMCQDataset
-from ..smp.file import LMUDataRoot, load
+from ..smp.file import load
 from ..smp.misc import toliststr, get_cache_path, modelscope_flag_set
 
 from huggingface_hub import snapshot_download
@@ -12,9 +12,6 @@ from huggingface_hub import snapshot_download
 
 class MindCubeBench(ImageMCQDataset):
     TYPE = 'MCQ'
-
-    LMUData_root = LMUDataRoot()
-    DATASET_URL = {}
 
     DATASET_URL = {
         'MindCubeBench_tiny_raw_qa': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/MindCubeBench_tiny_raw_qa.tsv',  # noqa: E501
