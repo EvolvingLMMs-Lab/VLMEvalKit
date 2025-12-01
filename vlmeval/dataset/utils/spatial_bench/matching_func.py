@@ -215,9 +215,11 @@ def _after_think(text: str) -> str:
     return text
 
 
-def _first_number(s: str):
-    m = _NUM_RE.search(s)
-    return float(m.group()) if m else None
+def _last_number(s: str):
+    nums = re.findall(_NUM_RE, s)
+    if nums:
+        return float(nums[-1])
+    return None
 
 
 def can_match_na(pred):
@@ -233,7 +235,7 @@ def can_match_na(pred):
         for raw in candidates:
             text = ZW_RE.sub('', raw.strip())
 
-            # <answer>
+            # 1) <answer> ... </answer> numeric
             m = TAGGED_NUMERIC_ANSWER.search(text)
             if m:
                 try:
@@ -241,16 +243,21 @@ def can_match_na(pred):
                 except Exception:
                     pass
 
-            # after </think>
+            # 2) after </think>: use *last* number in the tail
             tail = _after_think(text)
-            v = _first_number(tail)
+            v = _last_number(tail)
             if v is not None:
                 return v
 
-            # first number
-            v = _first_number(text)
-            if v is not None:
-                return v
+            # 3) global fallback:
+            #    - if only one unique number -> that one
+            #    - else last number in full text
+            nums = re.findall(_NUM_RE, text)
+            if nums:
+                uniq = sorted(set(nums))
+                if len(uniq) == 1:
+                    return float(uniq[0])
+                return float(nums[-1])
 
         return None
     except Exception:
