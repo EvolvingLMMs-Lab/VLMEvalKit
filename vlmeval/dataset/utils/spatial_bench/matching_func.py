@@ -1,6 +1,8 @@
 import re
 import ast
 
+from num2words import num2words
+
 
 # Zero-width characters (BOM, ZWSP, ZWNJ, ZWJ)
 ZW_RE = re.compile(
@@ -34,6 +36,7 @@ TAGGED_NUMERIC_ANSWER = re.compile(
 )
 
 
+# Matching func for mcq
 def can_match_option(
     answer_text: str,
     choices=None,
@@ -222,6 +225,36 @@ def _last_number(s: str):
     return None
 
 
+def build_word2num(max_n: int = 99, lang: str = "en"):
+    mapping = {}
+    for i in range(0, max_n + 1):
+        word = num2words(i, lang=lang)
+        mapping[word] = i
+    return mapping
+
+
+WORD2NUM = build_word2num(20)
+WORD_NUMBER_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(w) for w in WORD2NUM.keys()) + r")\b",
+    flags=re.IGNORECASE,
+)
+
+
+def normalize_number_words(text: str) -> str:
+    """
+    Replace all recognizable English number phrases in `text`
+    with their Arabic numeral strings.
+    """
+    def _repl(m: re.Match) -> str:
+        key = m.group(1).lower()
+        val = WORD2NUM.get(key)
+        # Fallback: if not found in WORD2NUM, keep original text
+        return str(val) if val is not None else m.group(0)
+
+    return WORD_NUMBER_PATTERN.sub(_repl, text)
+
+
+# Matching func for NA
 def can_match_na(pred):
     try:
         if isinstance(pred, list):
@@ -234,6 +267,7 @@ def can_match_na(pred):
 
         for raw in candidates:
             text = ZW_RE.sub('', raw.strip())
+            text = normalize_number_words(text)
 
             # 1) <answer> ... </answer> numeric
             m = TAGGED_NUMERIC_ANSWER.search(text)
