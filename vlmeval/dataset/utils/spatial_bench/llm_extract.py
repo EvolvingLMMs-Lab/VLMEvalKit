@@ -201,35 +201,3 @@ def extract_ans_by_llm(
     )
 
     return grade, extracted
-
-
-def compute_mcq_score_llm(
-    df: pd.DataFrame,
-    model,
-    *,
-    mode: str = 'mcq',
-    max_retry: int = 3,
-) -> pd.DataFrame:
-    """
-    LLM-based MCQ scoring.
-
-    model: 具有 .generate(prompt: str) -> str 的 judge 实例
-    """
-    grades, extracted_list, hits = [], [], []
-
-    for _, row in df.iterrows():
-        grade, extracted = extract_ans_by_llm(
-            model=model,
-            row=row,
-            mode=mode,
-            max_retry=max_retry,
-        )
-        grades.append(grade)
-        extracted_list.append(extracted)
-        hits.append(1 if grade == 'A' else 0)
-
-    df = df.copy()
-    df['judge_grade'] = grades          # 'A' / 'B' / 'C'
-    df['pred_extracted'] = extracted_list
-    df['hit'] = hits
-    return df
