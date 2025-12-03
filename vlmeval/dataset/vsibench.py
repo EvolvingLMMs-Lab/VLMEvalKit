@@ -229,7 +229,7 @@ class VsiBench(VideoBaseDataset):
         return message
 
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.spatial_bench.cal_scores import compute_mcq_score, compute_na_score
+        from .utils.spatial_bench.cal_scores import build_mcq_score_fn, build_na_score_fn
 
         suffix = eval_file.split('.')[-1]
         result_file = eval_file.replace(f'.{suffix}', f'_result.pkl')
@@ -242,13 +242,16 @@ class VsiBench(VideoBaseDataset):
         mcq_data = data[data['task_type'] == 'MCQ'].copy()
         na_data  = data[data['task_type'] == 'NA' ].copy()
 
+        # Scoring func selection from judge_kwargs['model']
         if len(mcq_data):
-            mcq_scored = compute_mcq_score(mcq_data)
+            mcq_score_fn = build_mcq_score_fn(**judge_kwargs)
+            mcq_scored = mcq_score_fn(mcq_data)
         else:
             mcq_scored = mcq_data
 
         if len(na_data):
-            na_scored  = compute_na_score(na_data)
+            na_score_fn = build_na_score_fn(**judge_kwargs)
+            na_scored = na_score_fn(na_data)
         else:
             na_scored = na_data
 

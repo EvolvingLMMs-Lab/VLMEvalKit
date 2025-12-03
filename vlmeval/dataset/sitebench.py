@@ -90,7 +90,7 @@ class SiteBenchBase:
         return dataset_path
 
     def evaluate(self, eval_file, **kwargs):
-        from .utils.spatial_bench.cal_scores import compute_mcq_score, compute_caa_score
+        from .utils.spatial_bench.cal_scores import build_mcq_score_fn, compute_caa_score
 
         suffix = eval_file.split('.')[-1]
         result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
@@ -104,7 +104,9 @@ class SiteBenchBase:
             data = data.sort_values(by='index')
         data['prediction'] = [str(x) for x in data['prediction']]
 
-        mcq_scored = compute_mcq_score(data.copy())
+        # 2. compute per-sample hit (MCQ)
+        score_fn = build_mcq_score_fn(**kwargs)  # Select MCQ scoring funcaccording to judge_kwargs['model'].
+        mcq_scored = score_fn(data.copy())
 
         cat_order = self._task_category()
 

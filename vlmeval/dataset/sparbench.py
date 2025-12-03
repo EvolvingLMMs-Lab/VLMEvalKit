@@ -9,7 +9,7 @@ from ..smp.misc import toliststr
 from ..smp.file import load
 from .image_base import ImageBaseDataset
 from .utils.spatial_bench.cal_scores import (
-    compute_mcq_score, compute_na_score, mean_relative_accuracy
+    build_mcq_score_fn, build_na_score_fn, mean_relative_accuracy
 )
 
 
@@ -167,13 +167,16 @@ class SparBench(ImageBaseDataset):
 
         print(f"[split] MCQ={len(mcq_data)}, NA={len(na_data)}, SPECIAL={len(special_data)}")
 
+        # Scoring func selection from judge_kwargs['model']
         if len(mcq_data):
-            mcq_scored = compute_mcq_score(mcq_data)
+            mcq_score_fn = build_mcq_score_fn(**judge_kwargs)
+            mcq_scored = mcq_score_fn(mcq_data)
         else:
             mcq_scored = mcq_data
 
         if len(na_data):
-            na_scored = compute_na_score(na_data)
+            na_score_fn = build_na_score_fn(**judge_kwargs)
+            na_scored = na_score_fn(na_data)
         else:
             na_scored = na_data
 

@@ -425,7 +425,7 @@ class StareBench(ImageMCQDataset):
             (2D, 3D, cube, tangram, temporal, perspective)
           where MCQ uses accuracy, binary uses F1.
         """
-        from .utils.spatial_bench.cal_scores import compute_mcq_score
+        from .utils.spatial_bench.cal_scores import build_mcq_score_fn
 
         suffix = eval_file.split('.')[-1]
         result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
@@ -443,7 +443,8 @@ class StareBench(ImageMCQDataset):
         data['prediction'] = [str(x) for x in data['prediction']]
 
         # 2. compute per-sample hit (MCQ)
-        mcq_scored = compute_mcq_score(data.copy())
+        score_fn = build_mcq_score_fn(**kwargs)  # Select MCQ scoring fun according to judge_kwargs['model'].
+        mcq_scored = score_fn(data.copy())
 
         # 3. normalize category column
         if 'category_agg' in mcq_scored.columns:
