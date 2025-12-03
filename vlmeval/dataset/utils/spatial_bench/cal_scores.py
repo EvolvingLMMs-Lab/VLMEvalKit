@@ -392,7 +392,7 @@ def compute_na_score_llm(
 
 
 # ---------- Factory func ----------
-def make_easi_mcq_score_fn(**judge_kwargs):
+def build_mcq_score_fn(**judge_kwargs):
     """
     Build an MCQ scoring function based on judge_kwargs['model'].
 
@@ -438,7 +438,7 @@ def make_easi_mcq_score_fn(**judge_kwargs):
     return score_fn
 
 
-def make_easi_na_score_fn(**judge_kwargs):
+def build_na_score_fn(**judge_kwargs):
     """
     Build an NA scoring function based on judge_kwargs['model'].
 
