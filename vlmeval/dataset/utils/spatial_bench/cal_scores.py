@@ -72,6 +72,7 @@ def _ensure_options_count_row(row, default_choices=4):
     return n if (isinstance(n, int) and n > 0) else default_choices
 
 
+# ---------- Rule-based scoring ----------
 def compute_mcq_score(df: pd.DataFrame) -> pd.DataFrame:
     preds_extracted, acc = [], []
     for _, r in df.iterrows():
@@ -148,6 +149,7 @@ def compute_caa_score(df_all: pd.DataFrame, default_choices: int = 4) -> float:
     return float((sum_Xi - sum_1_ni) / denom) if denom != 0 else 0.0
 
 
+# High-level evaluation core for MCQ-style datasets
 def eval_mcq_core(
     *,
     load_fn,
@@ -266,10 +268,8 @@ def eval_mcq_core(
     return summary
 
 
-# utils/spatial_bench/cal_scores.py
-
-
-def compute_mcq_score_llm(
+# ---------- LLM-based scoring ----------
+def compute_score_llm(
     df: pd.DataFrame,
     model,
     *,
@@ -278,7 +278,7 @@ def compute_mcq_score_llm(
     nproc: int = 4,
 ) -> pd.DataFrame:
     """
-    LLM-based MCQ/VQA scoring with optional multi-threading.
+    LLM-based MCQ/VQA scoring.
 
     Args:
         df: input dataframe (must contain at least question / prediction / answer).
@@ -288,14 +288,13 @@ def compute_mcq_score_llm(
         nproc: number of worker threads for parallel judging
     """
 
-    # --------- 1. 准备任务列表 ---------
-    # 先把行转成 dict，避免在线程里直接依赖 DataFrame 的迭代器
+    # Prepare task list
     rows: list[Dict[str, Any]] = list(df.to_dict(orient='records'))
 
     def _one_sample(row: Dict[str, Any]):
         """
-        单样本评判函数，给 track_progress_rich 用。
-        返回 (grade, extracted)，grade ∈ {'A','B','C'}。
+        Single-sample evaluation for track_progress_rich.
+        Returns (grade, extracted), where grade ∈ {'A', 'B', 'C'}.
         """
         s = pd.Series(row)
         grade, extracted = extract_ans_by_llm(
@@ -304,24 +303,21 @@ def compute_mcq_score_llm(
             mode=mode,
             max_retry=max_retry,
         )
+
+        print(f"one sample: grade - {grade}, extract - {extracted}")
+
         return grade, extracted
 
-    # 构造任务：每个 task 就是一个参数 dict，传给 _one_sample(**task)
+    # Build tasks
     tasks = [dict(row=r) for r in rows]
 
-    # --------- 2. 串行 / 并行执行 ---------
-    if nproc > 1:
-        # 并行版本
-        results = track_progress_rich(
-            func=_one_sample,
-            tasks=tasks,
-            nproc=nproc,
-        )
-    else:
-        # 简单串行版本
-        results = [_one_sample(t['row']) for t in tasks]
+    results = track_progress_rich(
+        func=_one_sample,
+        tasks=tasks,
+        nproc=nproc,
+    )
 
-    # --------- 3. 回填到 DataFrame ---------
+    # Write back
     grades = [g for g, _ in results]
     extracted_list = [e for _, e in results]
     hits = [1 if g == 'A' else 0 for g in grades]
@@ -333,43 +329,105 @@ def compute_mcq_score_llm(
     return df
 
 
+def compute_na_score_llm(
+    df: pd.DataFrame,
+    model,
+    *,
+    max_retry: int = 3,
+    nproc: int = 4,
+) -> pd.DataFrame:
+    """
+    LLM-based NA scoring.
+
+    Workflow:
+      - Use the LLM to extract the final numeric answer (mode='vqa')
+      - Then compute MRA, same as in compute_na_score
+    """
+    # Prepare task list
+    rows = list(df.to_dict(orient='records'))
+
+    def _one_sample(row_dict):
+        """
+        Per-sample computation used by track_progress_rich.
+        Returns (grade, pred_num, mra).
+        """
+        row = pd.Series(row_dict)
+
+        grade, extracted = extract_ans_by_llm(
+            model=model,
+            row=row,
+            mode='vqa',
+            max_retry=max_retry,
+        )
+
+        pred_num = to_float(extracted)
+        gt_num = to_float(row.get('answer', None))
+
+        if pred_num is None or gt_num is None or math.isnan(gt_num) or grade == 'C':
+            mra = 0.0
+        else:
+            mra = mean_relative_accuracy(pred_num, gt_num, 0.5, 0.95, 0.05)
+
+        return grade, pred_num, mra
+
+    # Build tasks
+    tasks = [dict(row_dict=r) for r in rows]
+
+    results = track_progress_rich(
+        func=_one_sample,
+        tasks=tasks,
+        nproc=nproc,
+    )
+
+    # Write back
+    grades = [g for (g, _, _) in results]
+    preds = [p for (_, p, _) in results]
+    mra_list = [m for (_, _, m) in results]
+
+    df = df.copy()
+    df['judge_grade'] = grades          # 'A' / 'B' / 'C'
+    df['pred_extracted'] = preds           # float or None
+    df['MRA:.5:.95:.05'] = mra_list
+    return df
+
+
+# ---------- Factory func ----------
 def make_easi_mcq_score_fn(**judge_kwargs):
     """
-    根据 judge_kwargs['model'] 返回合适的 score_fn。
+    Build an MCQ scoring function based on judge_kwargs['model'].
 
-    约定：
-      - model in {None, 'exact_matching', 'extract_matching'} -> 使用纯规则的 compute_mcq_score
-      - 其它字符串 -> 尝试构造 LLM judge，成功则返回基于 LLM 的 score_fn，否则回退到 compute_mcq_score
+    Convention:
+      - If model in {None, 'exact_matching', 'extract_matching'}:
+          use the rule-based compute_mcq_score.
+      - Otherwise (any other string):
+          try to build an LLM judge; if successful, return an LLM-based
+          score_fn; if anything fails, fall back to compute_mcq_score.
     """
-    from .llm_extract import compute_mcq_score_llm
     from ..judge_util import build_judge
-    from ....smp.vlm import gpt_key_set  # 路径按你实际工程调整
+    from ....smp.vlm import gpt_key_set
 
     model_name = judge_kwargs.get('model', None)
 
-    # 1) 不指定 / 指定 exact_matching / extract_matching -> 旧逻辑
+    # 1. Use rule-based func - compute_mcq_score
     if model_name is None or model_name in ('exact_matching', 'extract_matching'):
         return compute_mcq_score
 
-    # 2) 其它字符串 -> 走 LLM 逻辑
+    # 2. Build judge model
     max_retry = judge_kwargs.get('retry', 3)
-    # 目前没在 compute_mcq_score_llm 里用 nproc，如果将来要并发，可以再往下传
     nproc = judge_kwargs.get('nproc', judge_kwargs.get('api_nproc', 1))
 
-    # 2.1 没有 key -> 回退
     if not gpt_key_set():
         warnings.warn('OPENAI_API_KEY is not set properly, will use exact matching for evaluation')
         return compute_mcq_score
 
-    # 2.2 构造 judge 模型
     model = build_judge(**judge_kwargs)
     if (model is None) or (hasattr(model, "working") and not model.working()):
         warnings.warn('OPENAI API is not working properly, will use exact matching for evaluation')
         return compute_mcq_score
 
-    # 2.3 一切正常 -> 返回一个闭包，适配 eval_mcq_core(score_fn(df)) 这种接口
+    # If all good, return compute_score_llm
     def score_fn(df: pd.DataFrame) -> pd.DataFrame:
-        return compute_mcq_score_llm(
+        return compute_score_llm(
             df=df,
             model=model,
             mode='mcq',
@@ -380,70 +438,46 @@ def make_easi_mcq_score_fn(**judge_kwargs):
     return score_fn
 
 
-def compute_na_score_llm(
-    df: pd.DataFrame,
-    model,
-    *,
-    max_retry: int = 3,
-    nproc: int = 4,
-) -> pd.DataFrame:
+def make_easi_na_score_fn(**judge_kwargs):
     """
-    LLM-based NA/VQA scoring with optional multi-threading.
+    Build an NA scoring function based on judge_kwargs['model'].
 
-    - 用 LLM 抽取最终数值答案（mode='vqa'）
-    - 再按 MRA 计算分数（与 compute_na_score 相同）
+    Rules:
+      - If model in {None, 'exact_matching', 'extract_matching'}:
+          use the rule-based compute_na_score (can_match_na + MRA).
+      - Otherwise (any other string):
+          try to build an LLM judge; if successful, use compute_na_score_llm;
+          if API key is missing or judge construction fails, fall back to compute_na_score.
     """
+    from ..judge_util import build_judge
+    from ....smp.vlm import gpt_key_set
 
-    # 1) 先把 DataFrame 行转成普通 dict，方便在线程池里使用
-    rows = list(df.to_dict(orient='records'))
+    model_name = judge_kwargs.get('model', None)
 
-    def _one_sample(row_dict):
-        """
-        单样本计算：给 track_progress_rich 用。
-        返回 (grade, pred_num, mra)
-        """
-        row = pd.Series(row_dict)
+    # 1. Use rule-based func - compute_na_score
+    if model_name is None or model_name in ('exact_matching', 'extract_matching'):
+        return compute_na_score
 
-        # LLM 抽取 + 判定
-        grade, extracted = extract_ans_by_llm(
+    # 2. Build judge model
+    if not gpt_key_set():
+        warnings.warn('OPENAI_API_KEY is not set properly, fallback to rule-based NA scoring.')
+        return compute_na_score
+
+    model = build_judge(**judge_kwargs)
+    if (model is None) or (hasattr(model, "working") and not model.working()):
+        warnings.warn('Judge model is not working properly, fallback to rule-based NA scoring.')
+        return compute_na_score
+
+    max_retry = judge_kwargs.get('retry', 3)
+    nproc = judge_kwargs.get('nproc', judge_kwargs.get('api_nproc', 1) or 1)
+
+    # If all good, return compute_na_score_llm
+    def score_fn(df: pd.DataFrame) -> pd.DataFrame:
+        return compute_na_score_llm(
+            df=df,
             model=model,
-            row=row,
-            mode='vqa',
             max_retry=max_retry,
-        )
-
-        # 抽取结果转 float
-        pred_num = to_float(extracted)
-        gt_num = to_float(row.get('answer', None))
-
-        # 计算 MRA（抽不出 / INVALID 都记 0）
-        if pred_num is None or gt_num is None or math.isnan(gt_num) or grade == 'C':
-            mra = 0.0
-        else:
-            mra = mean_relative_accuracy(pred_num, gt_num, 0.5, 0.95, 0.05)
-
-        return grade, pred_num, mra
-
-    # 2) 构造任务列表（每个任务只传 row_dict）
-    tasks = [dict(row_dict=r) for r in rows]
-
-    # 3) 串行 / 并行执行
-    if nproc > 1:
-        results = track_progress_rich(
-            func=_one_sample,
-            tasks=tasks,
             nproc=nproc,
         )
-    else:
-        results = [_one_sample(t['row_dict']) for t in tasks]
 
-    # 4) 回填结果到 DataFrame
-    grades = [g for (g, _, _) in results]
-    preds = [p for (_, p, _) in results]
-    mra_list = [m for (_, _, m) in results]
-
-    df = df.copy()
-    df['judge_grade'] = grades          # LLM 的 A/B/C
-    df['pred_extracted'] = preds           # LLM 抽出的数值（float 或 None）
-    df['MRA:.5:.95:.05'] = mra_list
-    return df
+    return score_fn
