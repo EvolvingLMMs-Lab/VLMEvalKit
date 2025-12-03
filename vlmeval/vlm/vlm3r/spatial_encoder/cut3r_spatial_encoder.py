@@ -4,12 +4,14 @@ from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutputWithPooling, BaseModelOutput
 from typing import Union, Optional, Tuple
 import os
+import re
 from ..utils import rank0_print
 from einops import rearrange
 import sys
 sys.path.append('vlmeval/vlm/vlm3r/CUT3R')
 from src.dust3r.model import ARCroco3DStereo
 import numpy as np
+import requests
 
 try:
     import open3d as o3d
@@ -17,6 +19,106 @@ try:
 except ImportError:
     rank0_print("Warning: open3d not found. Point cloud export functionality will be disabled.")
     _OPEN3D_AVAILABLE = False
+
+CUT3R_GDRIVE_FILE_ID = "1Asz-ZB3FfpzZYwunhQvNPZEUA8XUNAYD"
+CUT3R_GDRIVE_BASE_URL = "https://docs.google.com/uc?export=download"
+MIN_CUT3R_WEIGHT_BYTES = 1 * 1024 * 1024
+
+
+def _save_response_content(response, destination_path, chunk_size: int = 32768):
+    with open(destination_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size):
+            if chunk:
+                f.write(chunk)
+
+
+def _get_confirm_token(response):
+    for key, value in response.cookies.items():
+        if key.startswith("download_warning"):
+            return value
+    return None
+
+
+def _extract_drive_download_form(content: str):
+    action_match = re.search(r"<form[^>]+action=\"([^\"]+)\"", content)
+    action_url = action_match.group(1) if action_match else CUT3R_GDRIVE_BASE_URL
+    inputs = dict(re.findall(r"name=\"([^\"]+)\"[^>]*value=\"([^\"]*)\"", content))
+    return action_url, inputs
+
+
+def _is_html_response(response) -> bool:
+    content_type = response.headers.get("Content-Type", "")
+    return "text/html" in content_type.lower()
+
+
+def _is_valid_cut3r_weights(path: str) -> bool:
+    if not os.path.exists(path):
+        return False
+    if os.path.getsize(path) < MIN_CUT3R_WEIGHT_BYTES:
+        return False
+    with open(path, "rb") as f:
+        header = f.read(512)
+    header_lower = header.lower()
+    if header_lower.startswith(b"<!doctype") or header_lower.startswith(b"<html"):
+        return False
+    if b"<html" in header_lower or b"google drive" in header_lower:
+        return False
+    return True
+
+
+def download_cut3r_weights(destination_path: str):
+    """Download CUT3R weights from Google Drive to the given destination."""
+    session = requests.Session()
+    params = {"id": CUT3R_GDRIVE_FILE_ID, "export": "download"}
+    response = session.get(CUT3R_GDRIVE_BASE_URL, params=params, stream=True)
+    response.raise_for_status()
+
+    token = _get_confirm_token(response)
+    if not token and _is_html_response(response):
+        html_text = response.content.decode("utf-8", errors="ignore")
+        action_url, hidden_inputs = _extract_drive_download_form(html_text)
+        token = hidden_inputs.get("confirm", token)
+        params.update({k: v for k, v in hidden_inputs.items() if k in {"id", "export", "confirm", "uuid"}})
+        download_url = action_url
+    else:
+        download_url = CUT3R_GDRIVE_BASE_URL
+
+    if token:
+        params["confirm"] = token
+
+    response.close()
+    response = session.get(download_url, params=params, stream=True)
+    response.raise_for_status()
+
+    _save_response_content(response, destination_path)
+    response.close()
+
+
+def ensure_cut3r_weights(weights_path: str):
+    if os.path.exists(weights_path):
+        if _is_valid_cut3r_weights(weights_path):
+            return
+        rank0_print(
+            f"CUT3R weights found at '{weights_path}' appear invalid. Re-downloading..."
+        )
+        os.remove(weights_path)
+
+    os.makedirs(os.path.dirname(weights_path), exist_ok=True)
+    rank0_print(
+        f"CUT3R dynamic weights not found at '{weights_path}'. Downloading from Google Drive..."
+    )
+
+    try:
+        download_cut3r_weights(weights_path)
+        if not _is_valid_cut3r_weights(weights_path):
+            raise RuntimeError("Downloaded CUT3R weights failed validation (HTML or too small).")
+        rank0_print("CUT3R weights download complete.")
+    except Exception as exc:
+        if os.path.exists(weights_path):
+            os.remove(weights_path)
+        raise RuntimeError(
+            "Failed to download valid CUT3R weights from Google Drive. Please download manually and place them at the specified path."
+        ) from exc
 
 class Cut3rSpatialConfig(PretrainedConfig):
     model_type = "cut3r_spatial_model"
@@ -476,6 +578,8 @@ class Cut3rSpatialTower(nn.Module):
         script_dir = os.path.dirname(os.path.abspath(__file__))
         vlm_3r_root = os.path.abspath(os.path.join(script_dir, '..'))
         dynamic_weights_path = os.path.join(vlm_3r_root, 'CUT3R', 'src', 'cut3r_512_dpt_4_64.pth')
+        # download weights from official repo if not exist
+        ensure_cut3r_weights(dynamic_weights_path)
 
         self.config = Cut3rSpatialConfig(
             weights_path=dynamic_weights_path,

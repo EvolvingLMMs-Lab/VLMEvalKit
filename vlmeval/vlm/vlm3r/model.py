@@ -195,7 +195,7 @@ class VLM3R(BaseModel):
         self.model.config.video_force_sample = video_force_sample
         self.nframe = video_max_frames
         self.fps = video_fps
-        self.model.to(device="cuda", dtype=torch.float16)
+        self.model.to(device="cuda")
 
 
     def generate_inner(self, message, dataset=None):
