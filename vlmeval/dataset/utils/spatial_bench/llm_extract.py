@@ -95,11 +95,13 @@ def call_llm_extract(
     options_block: str = ""
 ):
     """
-    通用的 LLM 调用 + 解析函数。
+    Generic LLM call + parsing helper.
 
-    返回: (grade, extracted_answer)
-      - grade: 'A' / 'B' / 'C'
-      - extracted_answer: LLM 认为的最终答案（字符串），若无则 'N/A'
+    Returns:
+        (grade, extracted_answer)
+          - grade: 'A' / 'B' / 'C'
+          - extracted_answer: the final answer extracted by the LLM as a string,
+            or 'N/A' if none can be extracted.
     """
     logger = get_logger('LLM Extract')
 
@@ -110,34 +112,43 @@ def call_llm_extract(
         options_block=options_block,
     )
 
-    for attempt in range(max_retry):
+    for _ in range(max_retry):
         ans = model.generate(prompt).strip()
         if 'Failed to obtain answer via API' in ans:
             logger.warning('GPT API failed to answer. ')
             continue
 
-        # 只看第一行，避免 LLM 啰嗦
-        first_line = ans.splitlines()[0].strip()
+        # Use only the first non-empty line to avoid verbose responses
+        line = ans.splitlines()[0].strip()
 
-        # 1) 最宽松：拿第一个非空 token，当作 grade
-        #    兼容 "A\tB. Yes" / "A: B. Yes" / "A B. Yes" / "A,B. Yes"
-        m = re.match(r'^\s*([ABC])\b(.*)$', first_line)
+        # Case 1. Grade + extracted
+        m = re.match(r'^\s*([ABC])\b(.*)$', line)
         if m:
             grade = m.group(1)
-            # 去掉前导分隔符/空白
-            rest = m.group(2).lstrip(" \t,:|")
-            extracted = rest if rest else "N/A"
+
+            # Clean grade: uppercase and clamp to {A, B, C}
+            grade = str(grade).strip().upper()
+            if grade not in ('A', 'B', 'C'):
+                grade = 'C'
+
+            # Clean extracted answer
+            rest = m.group(2)  # get the raw remainder
+            rest = re.sub(r'^[\s\|,:]+', '', rest)  # strip leading whitespace + common separators
+            rest = re.sub(r'^(?:\\[tnr])+', '', rest)  # turn "\t", "\n", "\r" to spaces
+
+            extracted = rest.strip() or "N/A"
             return grade, extracted
 
-        # 2) 如果只有一个字母 A/B/C 也接受
-        m2 = re.match(r'^\s*([ABC])\s*$', first_line)
+        # Case 1. Grade only
+        m2 = re.match(r'^\s*([ABC])\s*$', ans)
         if m2:
-            grade = m2.group(1)
+            grade = str(m2.group(1)).strip().upper()
+            if grade not in ('A', 'B', 'C'):
+                grade = 'C'
             return grade, "N/A"
 
         logger.warning(f"Unparsable LLM output: {ans}")
 
-    # 多次失败兜底
     logger.warning("LLM extract failed after max_retry, fallback to INVALID.")
     return "C", "N/A"
 
@@ -149,13 +160,12 @@ def extract_ans_by_llm(
     max_retry: int = 3
 ):
     """
-    通用 LLM 抽取 + 打分入口。
+    Generic LLM-based extraction + grading entry point.
 
-    mode:
-        - 'mcq': 带选项的选择题（使用 build_choices 构造 Options）
-        - 'vqa': 开放式问答（无选项）
-    返回: (grade, extracted_answer)
-        grade ∈ {'A','B','C'}
+    Returns:
+        (grade, extracted_answer)
+        - grade in {'A', 'B', 'C'}
+        - extracted_answer: the final answer string extracted by the LLM
     """
     valid_mode = ['mcq', 'vqa']
     assert mode in valid_mode, ValueError(f"Extract llm func mode must be in {valid_mode}, but got {mode}!")
@@ -164,33 +174,32 @@ def extract_ans_by_llm(
     prediction = str(row.get('prediction', ''))
     gold_raw = row.get('answer', '')
 
-    # ---- 构造标准答案文本 gold_answer / answer_text ----
+    # Mode mcq
     if mode == 'mcq':
-        # 选项
+        # Build choices
         choices = build_choices(row)
         option_str = build_option_str(choices) if choices else ""
 
-        # 把 options 拼到 question 后面（方便 LLM 看）
+        # Build options block for llm to know if there are options
         options_block = ""
         if option_str:
             options_block = "Options:\n" + option_str + "\n"
         else:
             options_block = ""
 
-        # 标准答案：优先按字母 + 文本的形式展开
+        # Standard answer: prefer "letter + text" form if possible
         answer_letter = str(gold_raw).strip().upper()
         if choices and answer_letter in choices:
             gold_answer = f"{answer_letter}. {choices[answer_letter]}"
         else:
-            # 回退：直接用原始 answer 字段
+            # Fallback: use raw answer field
             gold_answer = str(gold_raw)
 
-    else:  # 'vqa'
-        # 没有选项
+    # Mode vqa
+    else:
         options_block = ""
         gold_answer = str(gold_raw)
 
-    # ---- 调用 LLM ----
     grade, extracted = call_llm_extract(
         model=model,
         max_retry=max_retry,
