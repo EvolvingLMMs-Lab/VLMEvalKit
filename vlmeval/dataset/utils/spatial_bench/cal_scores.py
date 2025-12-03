@@ -10,7 +10,9 @@ from typing import Dict, Any
 
 from .matching_func import can_match_na, can_match_option
 from .llm_extract import extract_ans_by_llm
+from ..judge_util import build_judge
 from ....utils.mp_util import track_progress_rich
+from ....smp.vlm import gpt_key_set
 
 
 def exact_match(pred: str, target: str) -> float:
@@ -303,9 +305,6 @@ def compute_score_llm(
             mode=mode,
             max_retry=max_retry,
         )
-
-        print(f"one sample: grade - {grade}, extract - {extracted}")
-
         return grade, extracted
 
     # Build tasks
@@ -333,6 +332,7 @@ def compute_na_score_llm(
     df: pd.DataFrame,
     model,
     *,
+    mode: str = 'vqa',
     max_retry: int = 3,
     nproc: int = 4,
 ) -> pd.DataFrame:
@@ -356,7 +356,7 @@ def compute_na_score_llm(
         grade, extracted = extract_ans_by_llm(
             model=model,
             row=row,
-            mode='vqa',
+            mode=mode,
             max_retry=max_retry,
         )
 
@@ -392,92 +392,98 @@ def compute_na_score_llm(
 
 
 # ---------- Factory func ----------
-def build_mcq_score_fn(**judge_kwargs):
+def _build_llm_judge(judge_kwargs: dict, *, task_name: str):
     """
-    Build an MCQ scoring function based on judge_kwargs['model'].
+    Try to build an LLM judge from judge_kwargs.
 
-    Convention:
-      - If model in {None, 'exact_matching', 'extract_matching'}:
-          use the rule-based compute_mcq_score.
-      - Otherwise (any other string):
-          try to build an LLM judge; if successful, return an LLM-based
-          score_fn; if anything fails, fall back to compute_mcq_score.
+    Returns:
+        - model instance if everything is OK;
+        - None if API key is missing or the judge is not working.
     """
-    from ..judge_util import build_judge
-    from ....smp.vlm import gpt_key_set
-
-    model_name = judge_kwargs.get('model', None)
-
-    # 1. Use rule-based func - compute_mcq_score
-    if model_name is None or model_name in ('exact_matching', 'extract_matching'):
-        return compute_mcq_score
-
-    # 2. Build judge model
-    max_retry = judge_kwargs.get('retry', 3)
-    nproc = judge_kwargs.get('nproc', judge_kwargs.get('api_nproc', 1))
-
     if not gpt_key_set():
-        warnings.warn('OPENAI_API_KEY is not set properly, will use exact matching for evaluation')
-        return compute_mcq_score
+        warnings.warn(
+            f'OPENAI_API_KEY is not set properly, fallback to rule-based {task_name} scoring.'
+        )
+        return None
 
     model = build_judge(**judge_kwargs)
     if (model is None) or (hasattr(model, "working") and not model.working()):
-        warnings.warn('OPENAI API is not working properly, will use exact matching for evaluation')
-        return compute_mcq_score
+        warnings.warn(
+            f'LLM judge is not working properly, fallback to rule-based {task_name} scoring.'
+        )
+        return None
 
-    # If all good, return compute_score_llm
+    return model
+
+
+def _build_score_fn(
+    *,
+    task_name: str,
+    judge_kwargs: dict,
+    rule_fn: callable,
+    llm_fn: callable,
+    mode: str | None = None,   # e.g. 'mcq' for MCQ, 'vqa' for NA
+):
+    """
+    Generic factory to choose between rule-based scoring and LLM-based scoring.
+
+    Args:
+        task_name: for logging only, e.g. "MCQ" / "NA".
+        judge_kwargs: kwargs used to build the judge model.
+        rule_fn: rule-based scorer, signature: rule_fn(df) -> df.
+        llm_fn: LLM-based scorer, signature:
+            llm_fn(df, model, mode=..., max_retry=..., nproc=...) -> df
+        llm_mode: if not None, passed as mode=llm_mode to llm_fn (for MCQ).
+    """
+    model_name = judge_kwargs.get('model', None)
+
+    # 1. Rule-based path
+    if model_name is None or model_name in ('exact_matching', 'extract_matching'):
+        return rule_fn
+
+    # 2. Build LLM judge
+    model = _build_llm_judge(judge_kwargs, task_name=task_name)
+    if model is None:
+        return rule_fn
+
+    max_retry = judge_kwargs.get('retry', 3)
+    nproc = judge_kwargs.get('nproc', judge_kwargs.get('api_nproc', 1) or 1)
+
+    # 3. Wrap into df -> df scorer
     def score_fn(df: pd.DataFrame) -> pd.DataFrame:
-        return compute_score_llm(
+        kwargs = dict(
             df=df,
             model=model,
-            mode='mcq',
+            model=mode,
             max_retry=max_retry,
             nproc=nproc,
         )
+        return llm_fn(**kwargs)
 
     return score_fn
+
+
+def build_mcq_score_fn(**judge_kwargs):
+    """
+    Build an MCQ scoring function based on judge_kwargs['model'].
+    """
+    return _build_score_fn(
+        task_name="MCQ",
+        judge_kwargs=judge_kwargs,
+        rule_fn=compute_mcq_score,
+        llm_fn=compute_score_llm,   # note: this is the generic LLM scorer
+        mode='mcq',
+    )
 
 
 def build_na_score_fn(**judge_kwargs):
     """
     Build an NA scoring function based on judge_kwargs['model'].
-
-    Rules:
-      - If model in {None, 'exact_matching', 'extract_matching'}:
-          use the rule-based compute_na_score (can_match_na + MRA).
-      - Otherwise (any other string):
-          try to build an LLM judge; if successful, use compute_na_score_llm;
-          if API key is missing or judge construction fails, fall back to compute_na_score.
     """
-    from ..judge_util import build_judge
-    from ....smp.vlm import gpt_key_set
-
-    model_name = judge_kwargs.get('model', None)
-
-    # 1. Use rule-based func - compute_na_score
-    if model_name is None or model_name in ('exact_matching', 'extract_matching'):
-        return compute_na_score
-
-    # 2. Build judge model
-    if not gpt_key_set():
-        warnings.warn('OPENAI_API_KEY is not set properly, fallback to rule-based NA scoring.')
-        return compute_na_score
-
-    model = build_judge(**judge_kwargs)
-    if (model is None) or (hasattr(model, "working") and not model.working()):
-        warnings.warn('Judge model is not working properly, fallback to rule-based NA scoring.')
-        return compute_na_score
-
-    max_retry = judge_kwargs.get('retry', 3)
-    nproc = judge_kwargs.get('nproc', judge_kwargs.get('api_nproc', 1) or 1)
-
-    # If all good, return compute_na_score_llm
-    def score_fn(df: pd.DataFrame) -> pd.DataFrame:
-        return compute_na_score_llm(
-            df=df,
-            model=model,
-            max_retry=max_retry,
-            nproc=nproc,
-        )
-
-    return score_fn
+    return _build_score_fn(
+        task_name="NA",
+        judge_kwargs=judge_kwargs,
+        rule_fn=compute_na_score,
+        llm_fn=compute_na_score_llm,
+        mode='vqa',
+    )
