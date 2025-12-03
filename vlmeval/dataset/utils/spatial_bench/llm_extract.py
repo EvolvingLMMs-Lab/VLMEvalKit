@@ -1,6 +1,4 @@
 import re
-import ast
-import string
 import pandas as pd
 
 from .tools.utils import build_choices
@@ -139,7 +137,7 @@ def call_llm_extract(
             extracted = rest.strip() or "N/A"
             return grade, extracted
 
-        # Case 1. Grade only
+        # Case 2. Grade only
         m2 = re.match(r'^\s*([ABC])\s*$', ans)
         if m2:
             grade = str(m2.group(1)).strip().upper()
@@ -168,7 +166,7 @@ def extract_ans_by_llm(
         - extracted_answer: the final answer string extracted by the LLM
     """
     valid_mode = ['mcq', 'vqa']
-    assert mode in valid_mode, ValueError(f"Extract llm func mode must be in {valid_mode}, but got {mode}!")
+    assert mode in valid_mode, f"Extract llm func mode must be in {valid_mode}, but got {mode}!"
 
     question = str(row.get('question', ''))
     prediction = str(row.get('prediction', ''))

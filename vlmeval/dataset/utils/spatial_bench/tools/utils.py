@@ -66,6 +66,7 @@ def _parse_candidates(val, max_letter: str = 'F'):
             if isinstance(parsed, list):
                 return [_clean_text(x) for x in parsed]
         except Exception:
+            # If parsing fails, fall back to extracting choices from the string.
             pass
 
         # 2b) fallback: treat as a mini "options block"

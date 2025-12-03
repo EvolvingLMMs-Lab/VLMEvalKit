@@ -105,7 +105,7 @@ class SiteBenchBase:
         data['prediction'] = [str(x) for x in data['prediction']]
 
         # 2. compute per-sample hit (MCQ)
-        score_fn = build_mcq_score_fn(**kwargs)  # Select MCQ scoring funcaccording to judge_kwargs['model'].
+        score_fn = build_mcq_score_fn(**kwargs)  # Select MCQ scoring func according to judge_kwargs['model'].
         mcq_scored = score_fn(data.copy())
 
         cat_order = self._task_category()

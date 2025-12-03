@@ -1,4 +1,3 @@
-import re
 import ast
 import math
 import numpy as np
@@ -6,7 +5,7 @@ import pandas as pd
 import warnings
 
 from collections import OrderedDict
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from .matching_func import can_match_na, can_match_option
 from .llm_extract import extract_ans_by_llm
@@ -291,7 +290,7 @@ def compute_score_llm(
     """
 
     # Prepare task list
-    rows: list[Dict[str, Any]] = list(df.to_dict(orient='records'))
+    rows: List[Dict[str, Any]] = List(df.to_dict(orient='records'))
 
     def _one_sample(row: Dict[str, Any]):
         """
@@ -454,7 +453,7 @@ def _build_score_fn(
         kwargs = dict(
             df=df,
             model=model,
-            model=mode,
+            mode=mode,
             max_retry=max_retry,
             nproc=nproc,
         )

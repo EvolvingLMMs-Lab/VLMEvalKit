@@ -179,10 +179,6 @@ def can_match_option(
     if m:
         return m.group(1).upper()
 
-    m = PHRASE_AFTER.search(text)
-    if m:
-        return m.group(1).upper()
-
     # 7) Global fallback: uppercase-only & unique (skip enumerations)
     cleaned_lines = []
     for ln in text.splitlines():
