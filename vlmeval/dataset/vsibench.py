@@ -22,7 +22,7 @@ class VsiBench(VideoBaseDataset):
 
     OFFICAL_PRE_PROMPT = "These are frames of a video."
     OFFICAL_MCQ_POST_PROMPT = "Answer with the option's letter from the given choices directly."
-    OFFICAL_VQA_POST_PROMPT = "Answer briefly and directly in one float number."
+    OFFICAL_VQA_POST_PROMPT = "Please answer the question using a single word or phrase."
 
     LMUData_root = LMUDataRoot()
     DATASET_URL = {}
