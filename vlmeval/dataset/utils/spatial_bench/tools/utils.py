@@ -46,28 +46,45 @@ def _normalize_choice_body(raw) -> str:
     return txt
 
 
-def _parse_candidates(val):
+def _parse_candidates(val, max_letter: str = 'F'):
     """
     Parse 'options' / 'candidates' into a list of cleaned strings.
-
-    Supported:
-      - list
-      - stringified list via ast.literal_eval
     """
-    seq = None
+    # 1) already a list
     if isinstance(val, list):
-        seq = val
-    elif isinstance(val, str):
-        try:
-            parsed = ast.literal_eval(val)
-            if isinstance(parsed, list):
-                seq = parsed
-        except Exception:
+        return [_clean_text(x) for x in val]
+
+    # 2) string cases
+    if isinstance(val, str):
+        s = val.strip()
+        if not s:
             return None
-    else:
+
+        # 2a) try stringified Python list
+        try:
+            parsed = ast.literal_eval(s)
+            if isinstance(parsed, list):
+                return [_clean_text(x) for x in parsed]
+        except Exception:
+            pass
+
+        # 2b) fallback: treat as a mini "options block"
+        mapping = extract_choices_from_question(s, max_letter=max_letter)
+        if mapping:
+            out = []
+            for ch in string.ascii_uppercase:
+                if ch in mapping:
+                    out.append(_clean_text(mapping[ch]))
+                else:
+                    if ch == 'A':
+                        continue
+                    break
+            return out or None
+
         return None
 
-    return [_clean_text(x) for x in seq]
+    # 3) other types -> not supported
+    return None
 
 
 def _letters_upto(max_letter: str = 'F', n: int | None = None):
@@ -163,20 +180,29 @@ def extract_choices_from_question(q: str, max_letter: str = 'F') -> dict:
 
     letters = ''.join(_letters_upto(max_letter))
 
-    # Line-based: e.g. "A. foo" on its own line
+    # ---------------- Line-based: e.g. each option on its own line ----------------
     LINE_LABEL = re.compile(
         rf'(?mi)^[ \t]*'
         rf'(?:[*_`>•·\-]+\s*)?'
         rf'(?:[\(\[\{{（【]\s*)?'
-        rf'([{letters}])'
+        rf'([{letters}])'                  # A / B / ...
         rf'(?:\s*[\)\]\}}）】])?'
-        rf'\s*[\.．:：\)\]】、-]\s*'
+        rf'\s*[\.．:：\)\]】、-]\s*'        # A. / A) / A: ...
     )
-    line_markers = [(m.group(1).upper(), m.end(), m.start())
-                    for m in LINE_LABEL.finditer(text)]
-    from_lines = _slice_by_markers(text, line_markers) if line_markers else {}
 
-    # Inline: e.g. "A. foo  B. bar  C. baz"
+    from_lines: dict[str, str] = {}
+
+    for m in LINE_LABEL.finditer(text):
+        ch = m.group(1).upper()
+
+        line_end = text.find('\n', m.end())
+        if line_end == -1:
+            line_end = len(text)
+        raw = text[m.end():line_end]
+        body = _normalize_choice_body(raw)
+        from_lines[ch] = body
+
+    # ---------------- Inline: e.g. "A. foo  B. bar  C. baz" ----------------
     INLINE_LABEL = re.compile(
         rf'(?<![A-Za-z0-9])'
         rf'([{letters}])'
