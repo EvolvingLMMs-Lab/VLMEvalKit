@@ -422,7 +422,7 @@ def _build_score_fn(
     judge_kwargs: dict,
     rule_fn: callable,
     llm_fn: callable,
-    mode: str | None = None,   # e.g. 'mcq' for MCQ, 'vqa' for NA
+    mode: str | None = None,
 ):
     """
     Generic factory to choose between rule-based scoring and LLM-based scoring.
@@ -433,7 +433,7 @@ def _build_score_fn(
         rule_fn: rule-based scorer, signature: rule_fn(df) -> df.
         llm_fn: LLM-based scorer, signature:
             llm_fn(df, model, mode=..., max_retry=..., nproc=...) -> df
-        llm_mode: if not None, passed as mode=llm_mode to llm_fn (for MCQ).
+        mode: if not None, passed as mode=mode to llm_fn (for MCQ).
     """
     model_name = judge_kwargs.get('model', None)
 
