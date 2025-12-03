@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import math
 import os
-from typing import str, bool, int
 
 import decord
 import numpy as np
@@ -30,26 +29,26 @@ class VLM3R(BaseModel):
 
     def __init__(
         self,
-        model_path: str,
-        attn_implementation: str = 'flash_attention_2',
+        model_path,
+        attn_implementation='flash_attention_2',
         device_map="auto",
         torch_dtype="float16",
         use_cache=True,
-        delay_load: bool = False,
-        tie_weights: bool = True,
-        model_name: str = None,
-        model_base: str = 'lmms-lab/LLaVA-NeXT-Video-7B-Qwen2',
-        conv_template: str = 'qwen_1_5',
+        delay_load=False,
+        tie_weights=True,
+        model_name=None,
+        model_base='lmms-lab/LLaVA-NeXT-Video-7B-Qwen2',
+        conv_template='qwen_1_5',
         # video params
-        mm_resampler_type: str = 'spatial_pool',
-        mm_spatial_pool_stride: int = 2,
-        mm_spatial_pool_out_channels: int = 1024,
-        mm_spatial_pool_mode: str = "bilinear",
-        mm_newline_position: str = "grid",
-        mm_pooling_position: str = "after",
-        video_max_frames: int = 32,
-        video_fps: int = 1,
-        video_force_sample: bool = False,
+        mm_resampler_type='spatial_pool',
+        mm_spatial_pool_stride=2,
+        mm_spatial_pool_out_channels=1024,
+        mm_spatial_pool_mode="bilinear",
+        mm_newline_position="grid",
+        mm_pooling_position="after",
+        video_max_frames=32,
+        video_fps=1,
+        video_force_sample=False,
         *args,
         **kwargs,
     ):
@@ -59,7 +58,7 @@ class VLM3R(BaseModel):
             self.model_name = model_name
         else:
             self.model_name = get_model_name_from_path(model_path)
-
+        
         self.mm_resampler_type = mm_resampler_type
         self.mm_spatial_pool_stride = int(mm_spatial_pool_stride)
         self.mm_spatial_pool_out_channels = int(mm_spatial_pool_out_channels)
@@ -69,7 +68,7 @@ class VLM3R(BaseModel):
         self.mm_resampler_location = mm_pooling_position
         self.mm_newline_position = mm_newline_position
         self.delay_load = delay_load
-
+        
         # Currently only overwrite=True is supported.
         # if self.overwrite == True:
         overwrite_config = {}
@@ -95,7 +94,7 @@ class VLM3R(BaseModel):
                 overwrite_config["rope_scaling"] = {"factor": float(scaling_factor), "type": "linear"}
                 overwrite_config["max_sequence_length"] = 4096 * scaling_factor
                 overwrite_config["tokenizer_model_max_length"] = 4096 * scaling_factor
-
+        
         # load model
         kwargs["device_map"] = device_map
         if torch_dtype == "float16":
@@ -106,10 +105,10 @@ class VLM3R(BaseModel):
                 kwargs.pop("multimodal")
         else:
             is_multimodal = False
-
+            
         lora_cfg_pretrained = AutoConfig.from_pretrained(model_path)
         self.tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
-
+            
         del kwargs["device_map"]
         additional_config = {
             "tie_word_embeddings": False,
@@ -183,14 +182,14 @@ class VLM3R(BaseModel):
             if device_map != "auto":
                 self.vision_tower.to(device="cuda", dtype=torch.float16)
             self.image_processor = self.vision_tower.image_processor
-
+        
         self.model.eval()
         if tie_weights:
             self.model.tie_weights()
 
         self.conv_template = conv_template
         self.use_cache = use_cache
-
+        
         self.model.config.video_max_frames = video_max_frames
         self.model.config.video_fps = video_fps
         self.model.config.video_force_sample = video_force_sample
@@ -217,14 +216,14 @@ class VLM3R(BaseModel):
                 video_frames, _, _ = self.get_video_frames(video_path)
                 video = self.image_processor.preprocess(video_frames, return_tensors="pt")["pixel_values"].half().cuda()
                 videos.append(video)
-
+        
         if len(images) > 0:
             image_tensor = images
         elif len(videos) > 0:
             image_tensor = videos
         else:
             assert False, "No images or videos found in the message."
-
+            
         if self.model.config.mm_use_im_start_end:
             image_placeholders = (DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN + "\n" ) * len(image_tensor)
         else:
@@ -237,7 +236,7 @@ class VLM3R(BaseModel):
         prompt = conv.get_prompt()
 
         input_ids = tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda()
-
+        
         if self.tokenizer.pad_token_id is None and "qwen" in self.tokenizer.name_or_path.lower():
             print("Setting pad token to bos token for qwen model.")
             self.tokenizer.pad_token_id = 151643
@@ -283,3 +282,5 @@ class VLM3R(BaseModel):
         images = [Image.fromarray(arr) for arr in images]
 
         return images, indices, video_info
+    
+    
