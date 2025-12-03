@@ -1,17 +1,28 @@
-import torch
-import torch.nn as nn
-from transformers import PretrainedConfig, PreTrainedModel
-from transformers.modeling_outputs import BaseModelOutputWithPooling, BaseModelOutput
-from typing import Union, Optional, Tuple
+import glob
 import os
 import re
-from ..utils import rank0_print
-from einops import rearrange
+import subprocess
 import sys
-sys.path.append('vlmeval/vlm/vlm3r/CUT3R')
-from src.dust3r.model import ARCroco3DStereo
+from typing import Union, Optional, Tuple
+
 import numpy as np
 import requests
+import torch
+import torch.nn as nn
+from einops import rearrange
+from transformers import PretrainedConfig, PreTrainedModel
+from transformers.modeling_outputs import BaseModelOutputWithPooling, BaseModelOutput
+
+from ..utils import rank0_print
+
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+VLM3R_ROOT = os.path.dirname(SCRIPT_DIR)
+CUT3R_ROOT = os.path.join(VLM3R_ROOT, 'CUT3R')
+CUROPE_DIR = os.path.join(CUT3R_ROOT, 'src', 'croco', 'models', 'curope')
+
+if CUT3R_ROOT not in sys.path:
+    sys.path.append(CUT3R_ROOT)
 
 try:
     import open3d as o3d
@@ -19,6 +30,55 @@ try:
 except ImportError:
     rank0_print("Warning: open3d not found. Point cloud export functionality will be disabled.")
     _OPEN3D_AVAILABLE = False
+
+
+def _curope_extension_exists() -> bool:
+    if not os.path.isdir(CUROPE_DIR):
+        return False
+    patterns = ("curope*.so", "curope*.pyd", "curope*.dll")
+    for pattern in patterns:
+        if glob.glob(os.path.join(CUROPE_DIR, pattern)):
+            return True
+    build_dir = os.path.join(CUROPE_DIR, "build")
+    if os.path.isdir(build_dir):
+        for root, _, files in os.walk(build_dir):
+            if any(f.startswith("curope") and f.endswith((".so", ".pyd", ".dll")) for f in files):
+                return True
+    return False
+
+
+def _build_curope_extension():
+    if not os.path.isdir(CUROPE_DIR):
+        raise FileNotFoundError(
+            f"cuRoPE source directory not found at {CUROPE_DIR}. Please ensure CUT3R submodule is initialized."
+        )
+    rank0_print(
+        "cuRoPE CUDA extension not found. Building via `python setup.py build_ext --inplace`..."
+    )
+    cmd = [sys.executable, "setup.py", "build_ext", "--inplace"]
+    env = os.environ.copy()
+    try:
+        subprocess.run(cmd, cwd=CUROPE_DIR, check=True, env=env)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            "Failed to build the cuRoPE CUDA extension automatically. "
+            "Please run `cd vlmeval/vlm/vlm3r/CUT3R/src/croco/models/curope && python setup.py build_ext --inplace` manually."
+        ) from exc
+
+
+def ensure_curope_extension_built():
+    if _curope_extension_exists():
+        return
+    _build_curope_extension()
+    if not _curope_extension_exists():
+        raise RuntimeError(
+            "cuRoPE extension build completed but the compiled artifact was not found."
+        )
+
+
+ensure_curope_extension_built()
+
+from src.dust3r.model import ARCroco3DStereo
 
 CUT3R_GDRIVE_FILE_ID = "1Asz-ZB3FfpzZYwunhQvNPZEUA8XUNAYD"
 CUT3R_GDRIVE_BASE_URL = "https://docs.google.com/uc?export=download"
