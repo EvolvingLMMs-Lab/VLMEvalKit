@@ -103,6 +103,9 @@ from .sparbench import SparBench
 from .spatialvizbench import SpatialVizBench
 from .starebench import StareBench
 from .omnispatialbench import OmniSpatialBench
+from .erqabench import ERQA
+from .robospatialbench import RoboSpatialBench
+from .refspatialbench import RefSpatialBench
 
 from .reasonmap_plus import ReasonMap_Plus
 from .hipho import HiPhODataset
