@@ -290,7 +290,7 @@ def compute_score_llm(
     """
 
     # Prepare task list
-    rows: List[Dict[str, Any]] = List(df.to_dict(orient='records'))
+    rows: List[Dict[str, Any]] = list(df.to_dict(orient='records'))
 
     def _one_sample(row: Dict[str, Any]):
         """
