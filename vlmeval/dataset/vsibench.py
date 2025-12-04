@@ -233,6 +233,16 @@ class VsiBench(VideoBaseDataset):
 
         suffix = eval_file.split('.')[-1]
         result_file = eval_file.replace(f'.{suffix}', f'_result.pkl')
+        base_no_suffix = eval_file[:-(len(suffix) + 1)]
+
+        model_name = judge_kwargs.get('model', None)
+        if model_name in (None, 'exact_matching', 'extract_matching'):
+            judge_tag = '_extract_matching'
+        else:
+            judge_tag = f'_llm_{model_name}'
+
+        xlsx_path = f"{base_no_suffix}_{judge_tag}.xlsx"
+        acc_tsv_path = f"{base_no_suffix}_acc.tsv"
 
         data = load(eval_file)
         data = data.sort_values(by='index')
@@ -269,10 +279,6 @@ class VsiBench(VideoBaseDataset):
             print(f"[save] result saved to {result_file}")
         except Exception as e:
             warnings.warn(f"[save] failed to save result to {result_file}: {e}")
-
-        base_no_suffix = eval_file[:-(len(suffix) + 1)]
-        xlsx_path = f"{base_no_suffix}_extract_matching.xlsx"
-        acc_tsv_path = f"{base_no_suffix}_acc.tsv"
 
         try:
             import pandas as pd

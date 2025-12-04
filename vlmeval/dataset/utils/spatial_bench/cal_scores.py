@@ -163,7 +163,17 @@ def eval_mcq_core(
     suffix = eval_file.split('.')[-1]
     result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
     base_no_suffix = eval_file[:-(len(suffix) + 1)]
-    xlsx_path = f"{base_no_suffix}_extract_matching.xlsx"
+
+    # Decide Excel filename according to actual judge type
+    judge_mode = getattr(score_fn, 'judge_mode', 'rule')
+    judge_model = getattr(score_fn, 'judge_model', None)
+
+    if judge_mode == 'llm':
+        judge_tag = f"llm_{judge_model}" if judge_model else "llm_matching"
+    else:
+        judge_tag = "extract_matching"
+
+    xlsx_path = f"{base_no_suffix}_{judge_tag}.xlsx"
     acc_tsv_path = f"{base_no_suffix}_acc.tsv"
 
     data = load_fn(eval_file)
@@ -436,14 +446,23 @@ def _build_score_fn(
     """
     model_name = judge_kwargs.get('model', None)
 
+    def _make_rule_score_fn() -> callable:
+        def score_fn(df: pd.DataFrame) -> pd.DataFrame:
+            return rule_fn(df)
+
+        score_fn.judge_mode = 'rule'
+        # for rule-based path, if model_name is None, we treat it as 'extract_matching'
+        score_fn.judge_model = model_name or 'extract_matching'
+        return score_fn
+
     # 1. Rule-based path
     if model_name is None or model_name in ('exact_matching', 'extract_matching'):
-        return rule_fn
+        return _make_rule_score_fn()
 
     # 2. Build LLM judge
     model = _build_llm_judge(judge_kwargs, task_name=task_name)
     if model is None:
-        return rule_fn
+        return _make_rule_score_fn()
 
     max_retry = judge_kwargs.get('retry', 3)
     nproc = judge_kwargs.get('nproc', judge_kwargs.get('api_nproc', 1) or 1)
@@ -459,6 +478,8 @@ def _build_score_fn(
         )
         return llm_fn(**kwargs)
 
+    score_fn.judge_mode = 'llm'
+    score_fn.judge_model = model_name
     return score_fn
 
 

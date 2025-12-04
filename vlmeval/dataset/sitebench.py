@@ -94,9 +94,20 @@ class SiteBenchBase:
 
         suffix = eval_file.split('.')[-1]
         result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
-
         base_no_suffix = eval_file[:-(len(suffix) + 1)]
-        xlsx_path = f"{base_no_suffix}_extract_matching.xlsx"
+
+        score_fn = build_mcq_score_fn(**kwargs)  # Select MCQ scoring func according to judge_kwargs['model'].
+
+        # Read judge mode / model from the scorer's metadata.
+        judge_mode = getattr(score_fn, 'judge_mode', 'rule')              # 'rule' or 'llm'
+        judge_model = getattr(score_fn, 'judge_model', kwargs.get('model', None))
+
+        if judge_mode == 'llm':
+            judge_tag = f"llm_{judge_model}" if judge_model else "llm_matching"
+        else:
+            judge_tag = "extract_matching"
+
+        xlsx_path = f"{base_no_suffix}_{judge_tag}.xlsx"
         acc_tsv_path = f"{base_no_suffix}_acc.tsv"
 
         data = load(eval_file)
@@ -104,8 +115,7 @@ class SiteBenchBase:
             data = data.sort_values(by='index')
         data['prediction'] = [str(x) for x in data['prediction']]
 
-        # 2. compute per-sample hit (MCQ)
-        score_fn = build_mcq_score_fn(**kwargs)  # Select MCQ scoring func according to judge_kwargs['model'].
+        # compute per-sample hit (MCQ)
         mcq_scored = score_fn(data.copy())
 
         cat_order = self._task_category()
