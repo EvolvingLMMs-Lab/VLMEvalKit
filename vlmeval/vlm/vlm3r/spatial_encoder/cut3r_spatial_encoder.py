@@ -1,12 +1,17 @@
 import glob
 import os
-import re
 import subprocess
 import sys
 from typing import Union, Optional, Tuple
 
 import numpy as np
-import requests
+try:
+    # huggingface_hub is optional runtime dependency here; prefer HF download when available
+    from huggingface_hub import hf_hub_download
+    _HUGGINGFACE_HUB_AVAILABLE = True
+except Exception:
+    hf_hub_download = None
+    _HUGGINGFACE_HUB_AVAILABLE = False
 import torch
 import torch.nn as nn
 from einops import rearrange
@@ -80,35 +85,20 @@ ensure_curope_extension_built()
 
 from src.dust3r.model import ARCroco3DStereo
 
-CUT3R_GDRIVE_FILE_ID = "1Asz-ZB3FfpzZYwunhQvNPZEUA8XUNAYD"
-CUT3R_GDRIVE_BASE_URL = "https://docs.google.com/uc?export=download"
 MIN_CUT3R_WEIGHT_BYTES = 1 * 1024 * 1024
+# Hugging Face repo/filename defaults to the shared LMMS lab release. Override via env vars if needed.
+# Example override:
+#   export CUT3R_HF_REPO="username/custom-repo"
+#   export CUT3R_HF_FILENAME="custom_dir/custom_cut3r_weights.pth"
+DEFAULT_CUT3R_HF_REPO = "lmms-lab-si/third-party-models"
+DEFAULT_CUT3R_HF_FILENAME = "VLM3R/cut3r_512_dpt_4_64.pth"
+CUT3R_HF_REPO = os.environ.get("CUT3R_HF_REPO", DEFAULT_CUT3R_HF_REPO)
+CUT3R_HF_FILENAME = os.environ.get("CUT3R_HF_FILENAME", DEFAULT_CUT3R_HF_FILENAME)
+DEFAULT_CUT3R_REMOTE_URL = f"https://huggingface.co/{CUT3R_HF_REPO}/resolve/main/{CUT3R_HF_FILENAME}"
 
 
-def _save_response_content(response, destination_path, chunk_size: int = 32768):
-    with open(destination_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size):
-            if chunk:
-                f.write(chunk)
-
-
-def _get_confirm_token(response):
-    for key, value in response.cookies.items():
-        if key.startswith("download_warning"):
-            return value
-    return None
-
-
-def _extract_drive_download_form(content: str):
-    action_match = re.search(r"<form[^>]+action=\"([^\"]+)\"", content)
-    action_url = action_match.group(1) if action_match else CUT3R_GDRIVE_BASE_URL
-    inputs = dict(re.findall(r"name=\"([^\"]+)\"[^>]*value=\"([^\"]*)\"", content))
-    return action_url, inputs
-
-
-def _is_html_response(response) -> bool:
-    content_type = response.headers.get("Content-Type", "")
-    return "text/html" in content_type.lower()
+def _is_remote_identifier(identifier: str) -> bool:
+    return identifier.startswith("http://") or identifier.startswith("https://") or identifier.startswith("hf://")
 
 
 def _is_valid_cut3r_weights(path: str) -> bool:
@@ -126,58 +116,63 @@ def _is_valid_cut3r_weights(path: str) -> bool:
     return True
 
 
-def download_cut3r_weights(destination_path: str):
-    """Download CUT3R weights from Google Drive to the given destination."""
-    session = requests.Session()
-    params = {"id": CUT3R_GDRIVE_FILE_ID, "export": "download"}
-    response = session.get(CUT3R_GDRIVE_BASE_URL, params=params, stream=True)
-    response.raise_for_status()
-
-    token = _get_confirm_token(response)
-    if not token and _is_html_response(response):
-        html_text = response.content.decode("utf-8", errors="ignore")
-        action_url, hidden_inputs = _extract_drive_download_form(html_text)
-        token = hidden_inputs.get("confirm", token)
-        params.update({k: v for k, v in hidden_inputs.items() if k in {"id", "export", "confirm", "uuid"}})
-        download_url = action_url
-    else:
-        download_url = CUT3R_GDRIVE_BASE_URL
-
-    if token:
-        params["confirm"] = token
-
-    response.close()
-    response = session.get(download_url, params=params, stream=True)
-    response.raise_for_status()
-
-    _save_response_content(response, destination_path)
-    response.close()
-
-
-def ensure_cut3r_weights(weights_path: str):
-    if os.path.exists(weights_path):
-        if _is_valid_cut3r_weights(weights_path):
-            return
-        rank0_print(
-            f"CUT3R weights found at '{weights_path}' appear invalid. Re-downloading..."
+def download_cut3r_weights(source_identifier: Optional[str] = None) -> str:
+    """Download CUT3R weights via Hugging Face and return the resolved local path."""
+    if not _HUGGINGFACE_HUB_AVAILABLE:
+        raise RuntimeError(
+            "huggingface_hub is required to download CUT3R weights. Please `pip install huggingface_hub`."
         )
-        os.remove(weights_path)
+    if not CUT3R_HF_REPO:
+        raise RuntimeError(
+            "CUT3R_HF_REPO is not set. Set the environment variable pointing to the Hugging Face repo containing the weights."
+        )
 
-    os.makedirs(os.path.dirname(weights_path), exist_ok=True)
+    try:
+        rank0_print(
+            f"Downloading CUT3R weights from Hugging Face repo '{CUT3R_HF_REPO}' (file '{CUT3R_HF_FILENAME}')."
+            + (f" Source: {source_identifier}" if source_identifier else "")
+        )
+        hf_path = hf_hub_download(repo_id=CUT3R_HF_REPO, filename=CUT3R_HF_FILENAME)
+        if not hf_path or not os.path.exists(hf_path):
+            raise FileNotFoundError(
+                f"huggingface_hub returned path '{hf_path}', but the file does not exist."
+            )
+        rank0_print(f"CUT3R weights available at cached path '{hf_path}'.")
+        return hf_path
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to download CUT3R weights from Hugging Face."
+        ) from exc
+
+
+def ensure_cut3r_weights(weights_identifier: str) -> str:
+    # If the identifier points to a local path, try to use it directly.
+    if not _is_remote_identifier(weights_identifier):
+        if os.path.exists(weights_identifier):
+            if _is_valid_cut3r_weights(weights_identifier):
+                return weights_identifier
+            rank0_print(
+                f"CUT3R weights found at '{weights_identifier}' appear invalid. Re-downloading..."
+            )
+            os.remove(weights_identifier)
+        else:
+            # Ensure directory exists if we later want to place a manual copy here.
+            os.makedirs(os.path.dirname(weights_identifier), exist_ok=True)
+
+    source_desc = weights_identifier if _is_remote_identifier(weights_identifier) else DEFAULT_CUT3R_REMOTE_URL
     rank0_print(
-        f"CUT3R dynamic weights not found at '{weights_path}'. Downloading from Google Drive..."
+        f"CUT3R dynamic weights not available locally. Downloading from Hugging Face ({source_desc})..."
     )
 
     try:
-        download_cut3r_weights(weights_path)
-        if not _is_valid_cut3r_weights(weights_path):
+        resolved_path = download_cut3r_weights(source_desc)
+        if not _is_valid_cut3r_weights(resolved_path):
             raise RuntimeError("Downloaded CUT3R weights failed validation (HTML or too small).")
         rank0_print("CUT3R weights download complete.")
+        return resolved_path
     except Exception as exc:
-        if os.path.exists(weights_path):
-            os.remove(weights_path)
         raise RuntimeError(
-            "Failed to download valid CUT3R weights from Google Drive. Please download manually and place them at the specified path."
+            "Failed to download valid CUT3R weights."
         ) from exc
 
 class Cut3rSpatialConfig(PretrainedConfig):
@@ -185,7 +180,7 @@ class Cut3rSpatialConfig(PretrainedConfig):
 
     def __init__(
         self,
-        weights_path="../vlmeval/vlm/vlm3r/CUT3R/src/cut3r_512_dpt_4_64.pth",
+        weights_path,
         spatial_tower_select_feature="patch",
         spatial_tower_select_layer=-1,
         export_point_cloud: bool = False,
@@ -635,14 +630,11 @@ class Cut3rSpatialTower(nn.Module):
 
         self.is_loaded = False
 
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        vlm_3r_root = os.path.abspath(os.path.join(script_dir, '..'))
-        dynamic_weights_path = os.path.join(vlm_3r_root, 'CUT3R', 'src', 'cut3r_512_dpt_4_64.pth')
-        # download weights from official repo if not exist
-        ensure_cut3r_weights(dynamic_weights_path)
+        # download weights from Hugging Face
+        weights_path = ensure_cut3r_weights(DEFAULT_CUT3R_REMOTE_URL)
 
         self.config = Cut3rSpatialConfig(
-            weights_path=dynamic_weights_path,
+            weights_path=weights_path,
             spatial_tower_select_feature=getattr(spatial_tower_cfg, 'spatial_tower_select_feature', 'patch'),
             spatial_tower_select_layer=getattr(spatial_tower_cfg, 'spatial_tower_select_layer', -1)
         )
