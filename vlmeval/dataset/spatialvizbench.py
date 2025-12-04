@@ -12,7 +12,7 @@ class SpatialVizBench(ImageMCQDataset):
     TYPE = 'MCQ'
 
     SPATIALVIZ_TSV_URL = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SpatialVizBench.tsv'  # noqa: E501
-    SPATIALVIZ_TSV_MD5 = None
+    SPATIALVIZ_TSV_MD5 = '5ed4cb6463bfed0a92e52ffc4e8b6257'
 
     VARIANTS = ['SpatialVizBench', 'SpatialVizBench_CoT']
 
@@ -99,13 +99,16 @@ class SpatialVizBench(ImageMCQDataset):
         return msgs
 
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.spatial_bench.cal_scores import compute_mcq_score, eval_mcq_core
+        from .utils.spatial_bench.cal_scores import eval_mcq_core, build_mcq_score_fn
+
+        # Select MCQ scoring function (rule-based or LLM-based) according to judge_kwargs['model'].
+        score_fn = build_mcq_score_fn(**judge_kwargs)
 
         category_task_order = self.category_task_order()
         raw = eval_mcq_core(
             load_fn=load,
             eval_file=eval_file,
-            score_fn=compute_mcq_score,
+            score_fn=score_fn,
             group_col=['category', 'task'],
             order={
                 'category': list(category_task_order.keys()),

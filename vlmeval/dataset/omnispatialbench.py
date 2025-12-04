@@ -80,6 +80,7 @@ class OmniSpatialBench(ImageMCQDataset):
     TYPE = 'MCQ'
 
     OMNI_TSV_URL = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OmniSpatialBench.tsv'
+    OMNI_TSV_URL = '5d0896fc57c452055b020cc309ed799b'
 
     VARIANTS = [
         'OmniSpatialBench',
@@ -93,7 +94,7 @@ class OmniSpatialBench(ImageMCQDataset):
 
     for name in VARIANTS:
         DATASET_URL[name] = OMNI_TSV_URL
-        DATASET_MD5[name] = None
+        DATASET_MD5[name] = OMNI_TSV_URL
 
     SYS_PROMPTS = {
         "default": DEFAULT_SYSTEM_PROMPT,
@@ -247,12 +248,15 @@ class OmniSpatialBench(ImageMCQDataset):
         return msgs
 
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.spatial_bench.cal_scores import compute_mcq_score, eval_mcq_core
+        from .utils.spatial_bench.cal_scores import eval_mcq_core, build_mcq_score_fn
+
+        # Select MCQ scoring function (rule-based or LLM-based) according to judge_kwargs['model'].
+        score_fn = build_mcq_score_fn(**judge_kwargs)
 
         raw = eval_mcq_core(
             load_fn=load,
             eval_file=eval_file,
-            score_fn=compute_mcq_score,
+            score_fn=score_fn,
             group_col=['task_type', 'sub_task_type'],
             order={
                 'task_type': list(self.CATEGORY_TASK_ORDER.keys()),

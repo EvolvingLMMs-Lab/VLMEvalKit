@@ -90,13 +90,24 @@ class SiteBenchBase:
         return dataset_path
 
     def evaluate(self, eval_file, **kwargs):
-        from .utils.spatial_bench.cal_scores import compute_mcq_score, compute_caa_score
+        from .utils.spatial_bench.cal_scores import build_mcq_score_fn, compute_caa_score
 
         suffix = eval_file.split('.')[-1]
         result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
-
         base_no_suffix = eval_file[:-(len(suffix) + 1)]
-        xlsx_path = f"{base_no_suffix}_extract_matching.xlsx"
+
+        score_fn = build_mcq_score_fn(**kwargs)  # Select MCQ scoring func according to judge_kwargs['model'].
+
+        # Read judge mode / model from the scorer's metadata.
+        judge_mode = getattr(score_fn, 'judge_mode', 'rule')              # 'rule' or 'llm'
+        judge_model = getattr(score_fn, 'judge_model', kwargs.get('model', None))
+
+        if judge_mode == 'llm':
+            judge_tag = f"llm_{judge_model}" if judge_model else "llm_matching"
+        else:
+            judge_tag = "extract_matching"
+
+        xlsx_path = f"{base_no_suffix}_{judge_tag}.xlsx"
         acc_tsv_path = f"{base_no_suffix}_acc.tsv"
 
         data = load(eval_file)
@@ -104,7 +115,8 @@ class SiteBenchBase:
             data = data.sort_values(by='index')
         data['prediction'] = [str(x) for x in data['prediction']]
 
-        mcq_scored = compute_mcq_score(data.copy())
+        # compute per-sample hit (MCQ)
+        mcq_scored = score_fn(data.copy())
 
         cat_order = self._task_category()
 
@@ -181,11 +193,13 @@ class SiteBenchBase:
 class SiteBenchImage(SiteBenchBase, ImageMCQDataset):
     TYPE = 'MCQ'
 
-    LMUData_root = LMUDataRoot()
-    DATASET_URL = {}
+    DATASET_URL = {
+        "SiteBenchImage": "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SiteBenchImage.tsv"  # noqa: E501
+    }
 
-    DATASET_URL["SiteBenchImage"] = "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SiteBenchImage.tsv"  # noqa: E501
-    DATASET_MD5 = {key: None for key in DATASET_URL}
+    DATASET_MD5 = {
+        "SiteBenchImage": "59a2ada248b743c1d7b2f89dd5afcdc3"
+    }
 
     def prepare_tsv(self, url, file_md5=None):
         data = super().prepare_tsv(url, file_md5)
@@ -291,10 +305,12 @@ class SiteBenchVideo(SiteBenchBase, VideoBaseDataset):
     MODALITY = 'VIDEO'
 
     LMUData_root = LMUDataRoot()
-    DATASET_URL = {}
-
-    DATASET_URL["SiteBenchVideo"] = "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SiteBenchVideo.tsv"  # noqa: E501
-    DATASET_MD5 = {key: None for key in DATASET_URL}
+    DATASET_URL = {
+        'SiteBenchVideo': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SiteBenchVideo.tsv'  # noqa: E501
+    }
+    DATASET_MD5 = {
+        'SiteBenchVideo': 'bb2ac531fa83cf8280b23c25d738922d'
+    }
 
     def __init__(self, dataset='SiteBenchVideo', pack=False, nframe=0, fps=-1):
         super().__init__(dataset=dataset, pack=pack, nframe=nframe, fps=fps)
