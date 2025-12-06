@@ -246,7 +246,7 @@ IMAGE_DATASET = [
 # add by EASI team
 IMAGE_DATASET += [
     MindCubeBench, EmbSpatialBench, ViewSpatialBench, MMSIBench, SiteBenchImage,
-    SparBench, SpatialVizBench, StareBench, OmniSpatialBench
+    SparBench, SpatialVizBench, StareBench, OmniSpatialBench, ERQA, RoboSpatialBench, RefSpatialBench
 ]
 
 VIDEO_DATASET = [
