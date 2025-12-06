@@ -102,10 +102,9 @@ class SiteBenchBase:
         judge_mode = getattr(score_fn, 'judge_mode', 'rule')              # 'rule' or 'llm'
         judge_model = getattr(score_fn, 'judge_model', kwargs.get('model', None))
 
+        judge_tag = 'extract_matching'
         if judge_mode == 'llm':
-            judge_tag = f"llm_{judge_model}" if judge_model else "llm_matching"
-        else:
-            judge_tag = "extract_matching"
+            judge_tag = f'llm_{judge_model}' if judge_model else 'llm_matching'
 
         xlsx_path = f"{base_no_suffix}_{judge_tag}.xlsx"
         acc_tsv_path = f"{base_no_suffix}_acc.tsv"
