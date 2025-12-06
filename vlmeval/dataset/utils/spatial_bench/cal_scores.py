@@ -151,7 +151,7 @@ def compute_caa_score(df_all: pd.DataFrame, default_choices: int = 4) -> float:
 
 
 # High-level evaluation core for MCQ-style datasets
-def eval_mcq_core(
+def eval_mcq_score(
     *,
     load_fn,
     eval_file: str,

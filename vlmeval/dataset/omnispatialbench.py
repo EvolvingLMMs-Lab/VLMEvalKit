@@ -248,12 +248,12 @@ class OmniSpatialBench(ImageMCQDataset):
         return msgs
 
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.spatial_bench.cal_scores import eval_mcq_core, build_mcq_score_fn
+        from .utils.spatial_bench.cal_scores import eval_mcq_score, build_mcq_score_fn
 
         # Select MCQ scoring function (rule-based or LLM-based) according to judge_kwargs['model'].
         score_fn = build_mcq_score_fn(**judge_kwargs)
 
-        raw = eval_mcq_core(
+        raw = eval_mcq_score(
             load_fn=load,
             eval_file=eval_file,
             score_fn=score_fn,
