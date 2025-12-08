@@ -2020,6 +2020,7 @@ spatial_related_models = {
 }
 
 sensenova_si_series = {
+    # SenseNova-SI-1.0 series
     "SenseNova-SI-InternVL3-2B": partial(
         InternVLChat, 
         model_path="sensenova/SenseNova-SI-InternVL3-2B", 
@@ -2032,6 +2033,7 @@ sensenova_si_series = {
         use_custom_prompt=False,
         version="V2.0"
     ),
+    # SenseNova-SI-1.1 series
     "SenseNova-SI-1.1-InternVL3-2B": partial(
         InternVLChat, 
         model_path="sensenova/SenseNova-SI-1.1-InternVL3-2B", 
@@ -2044,7 +2046,32 @@ sensenova_si_series = {
         use_custom_prompt=False,
         version="V2.0"
     ),
-    
+    "SenseNova-SI-1.1-Qwen2.5-VL-3B": partial(
+        Qwen2VLChat, 
+        model_path="sensenova/SenseNova-SI-1.1-Qwen2.5-VL-3B", 
+        min_pixels=1280 * 28 * 28,
+        max_pixels=16384 * 28 * 28,
+        use_custom_prompt=False,
+    ),
+    "SenseNova-SI-1.1-Qwen2.5-VL-7B": partial(
+        Qwen2VLChat, 
+        model_path="sensenova/SenseNova-SI-1.1-Qwen2.5-VL-7B", 
+        min_pixels=1280 * 28 * 28,
+        max_pixels=16384 * 28 * 28,
+        use_custom_prompt=False,
+    ),
+    "SenseNova-SI-1.1-Qwen3-VL-8B": partial(
+        Qwen3VLChat,
+        model_path="sensenova/SenseNova-SI-1.1-Qwen3-VL-8B",
+        use_custom_prompt=False,
+    ),
+    # SenseNova-SI-1.2 series
+    "SenseNova-SI-1.2-InternVL3-8B": partial(
+        InternVLChat, 
+        model_path="sensenova/SenseNova-SI-1.2-InternVL3-8B", 
+        use_custom_prompt=False,
+        version="V2.0"
+    ),
 }
 
 internvl_groups = [
