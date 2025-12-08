@@ -20,75 +20,33 @@ class VsiBench(VideoBaseDataset):
     TYPE = 'MCQ'
     MODALITY = 'VIDEO'
 
-    # EASI system prompt format from Holistic Evaluation of Multimodal LLMs on Spatial Intelligence. (https://arxiv.org/pdf/2508.13142)
-    EASI_MCQ_SYS_PROMPT = (
-        "You are a spatial-reasoning assistant. Always ground your answer in the visual evidence; "
-        "do not hallucinate unseen objects. If uncertain, pick the most plausible option—never refuse or reply "
-        "“insufficient information.” Think step by step and provide the answer. "
-        "You should first provide a reasoning process, then provide a single option (an English letter) "
-        "as the final answer. The reasoning process and the answer are enclosed within <think></think> "
-        "and <answer></answer> tags, respectively, i.e., <think>reasoning process</think>, "
-        "<answer>answer</answer>."
-    )
-    EASI_VQA_SYS_PROMPT = (
-        "You are a spatial-reasoning assistant. Always ground your answer in the visual evidence; "
-        "do not hallucinate unseen objects. If uncertain, pick the most plausible option—never refuse or reply "
-        "“insufficient information. Think step by step and provide the answer. "
-        "You should first provide a reasoning process, then provide one float number as the final answer. "
-        "The reasoning process and the answer are enclosed within <think></think> and <answer></answer> tags, "
-        "respectively, i.e., <think>reasoning process</think>, <answer>answer</answer>. "
-    )
-
-    ORIGIN_PRE_PROMPT = "These are frames of a video."
-    ORIGIN_MCQ_POST_PROMPT = "Answer with the option's letter from the given choices directly."
-    ORIGIN_VQA_POST_PROMPT = "Answer briefly and directly in one float number."
+    OFFICAL_PRE_PROMPT = "These are frames of a video."
+    OFFICAL_MCQ_POST_PROMPT = "Answer with the option's letter from the given choices directly."
+    OFFICAL_VQA_POST_PROMPT = "Answer briefly and directly in one float number."
 
     LMUData_root = LMUDataRoot()
-    DATASET_URL = {}
 
     DATASET_URL = {
-        "VSI-Bench": "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/VSI-Bench.tsv",  # noqa: E501
-        "VSI-Bench-Debiased": "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/VSI-Bench-Debiased.tsv",  # noqa: E501
+        'VSI-Bench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/VSI-Bench.tsv',  # noqa: E501
+        'VSI-Bench-Debiased': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/VSI-Bench-Debiased.tsv'  # noqa: E501
     }
-    DATASET_MD5 = {key: None for key in DATASET_URL}
+    DATASET_MD5 = {
+        'VSI-Bench': '34544fd83241391d83eff087a1be7d83',
+        'VSI-Bench-Debiased': '2a075fbc69a7725fe7f0718eafb7fca5'
+    }
 
     def __init__(self, dataset, pack=False, nframe=0, fps=-1, sample_strategy='uniform_tail'):
         self.sample_strategy = sample_strategy
-        self.base_name, self.is_debiased, self.variant = self.parse_dataset_name(dataset)
-        print(f"VsiBench variant={self.variant}, debiased={self.is_debiased}")
-
         valid_strategies = {'uniform_tail', 'uniform', 'chunk_center'}
         if sample_strategy not in valid_strategies:
             raise ValueError(f"[{dataset}] Unsupported sample_strategy '{sample_strategy}'")
 
         super().__init__(dataset=dataset, pack=pack, nframe=nframe, fps=fps)
 
-    @staticmethod
-    def parse_dataset_name(name: str,
-                           default_variant: str = "origin",
-                           default_base: str = "VSI-Bench"):
-        if not isinstance(name, str):
-            return default_variant, default_base, False
-
-        lower = name.lower()
-
-        is_debiased = "debiased" in lower
-        base_name = "VSI-Bench-Debiased" if is_debiased else "VSI-Bench"
-
-        if lower.endswith("_standard"):
-            variant = "standard"
-        elif lower.endswith("_origin"):
-            variant = "origin"
-        else:
-            variant = default_variant
-
-        return base_name, is_debiased, variant
-
     @classmethod
     def supported_datasets(cls):
-        bases = ["VSI-Bench", "VSI-Bench-Debiased"]
-        variants = ["origin", "standard"]
-        return [f"{b}_{v}" for b in bases for v in variants]
+        subsets = ["VSI-Bench", "VSI-Bench-Debiased"]
+        return subsets
 
     def get_task_type(self, question_type):
         MCQ_items = [
@@ -171,8 +129,8 @@ class VsiBench(VideoBaseDataset):
         return dataset_path
 
     def prepare_dataset(self, dataset_name):
-        url = self.DATASET_URL[self.base_name]
-        md5 = self.DATASET_MD5[self.base_name]
+        url = self.DATASET_URL[dataset_name]
+        md5 = self.DATASET_MD5[dataset_name]
 
         _ = super().prepare_tsv(url, md5)
 
@@ -249,17 +207,13 @@ class VsiBench(VideoBaseDataset):
             options = ast.literal_eval(line['candidates'])
             formatted_options = '\n'.join(options)
 
-        # use vsi origin prompt
-        if self.variant == 'origin':
-            if task_type == 'MCQ':
-                prompt = "\n".join([self.ORIGIN_PRE_PROMPT, question, formatted_options, self.ORIGIN_MCQ_POST_PROMPT])
-            else:
-                prompt = "\n".join([self.ORIGIN_PRE_PROMPT, question, self.ORIGIN_VQA_POST_PROMPT])
+        # following vsi prompt format
+        prompt_lst = [self.OFFICAL_PRE_PROMPT, question]
+        if task_type == 'MCQ':
+            prompt_lst += [formatted_options, self.OFFICAL_MCQ_POST_PROMPT]
         else:
-            if task_type == 'MCQ':
-                prompt = "\n".join([self.EASI_MCQ_SYS_PROMPT, question, formatted_options])
-            else:
-                prompt = "\n".join([self.EASI_VQA_SYS_PROMPT, question])
+            prompt_lst += [self.OFFICAL_VQA_POST_PROMPT]
+        prompt = '\n'.join(prompt_lst)
 
         message = []
 
@@ -275,10 +229,20 @@ class VsiBench(VideoBaseDataset):
         return message
 
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.spatial_bench.cal_scores import compute_mcq_score, compute_na_score
+        from .utils.spatial_bench.cal_scores import build_mcq_score_fn, build_na_score_fn
 
         suffix = eval_file.split('.')[-1]
         result_file = eval_file.replace(f'.{suffix}', f'_result.pkl')
+        base_no_suffix = eval_file[:-(len(suffix) + 1)]
+
+        model_name = judge_kwargs.get('model', None)
+        if model_name in (None, 'exact_matching', 'extract_matching'):
+            judge_tag = '_extract_matching'
+        else:
+            judge_tag = f'_llm_{model_name}'
+
+        xlsx_path = f"{base_no_suffix}_{judge_tag}.xlsx"
+        acc_tsv_path = f"{base_no_suffix}_acc.tsv"
 
         data = load(eval_file)
         data = data.sort_values(by='index')
@@ -288,13 +252,16 @@ class VsiBench(VideoBaseDataset):
         mcq_data = data[data['task_type'] == 'MCQ'].copy()
         na_data  = data[data['task_type'] == 'NA' ].copy()
 
+        # Scoring func selection from judge_kwargs['model']
         if len(mcq_data):
-            mcq_scored = compute_mcq_score(mcq_data)
+            mcq_score_fn = build_mcq_score_fn(**judge_kwargs)
+            mcq_scored = mcq_score_fn(mcq_data)
         else:
             mcq_scored = mcq_data
 
         if len(na_data):
-            na_scored  = compute_na_score(na_data)
+            na_score_fn = build_na_score_fn(**judge_kwargs)
+            na_scored = na_score_fn(na_data)
         else:
             na_scored = na_data
 
@@ -312,10 +279,6 @@ class VsiBench(VideoBaseDataset):
             print(f"[save] result saved to {result_file}")
         except Exception as e:
             warnings.warn(f"[save] failed to save result to {result_file}: {e}")
-
-        base_no_suffix = eval_file[:-(len(suffix) + 1)]
-        xlsx_path = f"{base_no_suffix}_extract_matching.xlsx"
-        acc_tsv_path = f"{base_no_suffix}_acc.tsv"
 
         try:
             import pandas as pd

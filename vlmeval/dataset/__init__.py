@@ -99,6 +99,10 @@ from .embspatialbench import EmbSpatialBench
 from .viewspatialbench import ViewSpatialBench
 from .mmsibench import MMSIBench
 from .sitebench import SiteBenchImage
+from .sparbench import SparBench
+from .spatialvizbench import SpatialVizBench
+from .starebench import StareBench
+from .omnispatialbench import OmniSpatialBench
 
 from .reasonmap_plus import ReasonMap_Plus
 from .hipho import HiPhODataset
@@ -234,7 +238,12 @@ IMAGE_DATASET = [
     AyaVisionBench, TopViewRS, VLMBias, MMHELIX, MedqbenchMCQDataset, MathCanvas,
     MedqbenchPairedDescriptionDataset, MedqbenchCaptionDataset, ChartMuseum, ChartQAPro, ReasonMap_Plus,
     olmOCRBench, OceanOCRBench, MATBench, VLRMBench, RefCOCODataset, SimpleVQA, HiPhODataset, MaCBench,
-    MindCubeBench, EmbSpatialBench, ViewSpatialBench, MMSIBench, SiteBenchImage
+]
+
+# add by EASI team
+IMAGE_DATASET += [
+    MindCubeBench, EmbSpatialBench, ViewSpatialBench, MMSIBench, SiteBenchImage,
+    SparBench, SpatialVizBench, StareBench, OmniSpatialBench
 ]
 
 VIDEO_DATASET = [
@@ -247,8 +256,10 @@ VIDEO_DATASET = [
     Video_MMLU_CAP, Video_MMLU_QA,
     Video_Holmes, VCRBench, CGAVCounting,
     EgoExoBench_MCQ, VideoTT, VideoMMMU,
-    SiteBenchVideo, VsiBench
 ]
+
+# add by EASI team
+VIDEO_DATASET += [SiteBenchVideo, VsiBench]
 
 TEXT_DATASET = [
     TextMCQDataset

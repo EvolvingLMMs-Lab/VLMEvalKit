@@ -4,7 +4,7 @@ import ast
 from tqdm import tqdm
 
 from .image_mcq import ImageMCQDataset
-from ..smp.file import LMUDataRoot, load
+from ..smp.file import load
 from ..smp.misc import toliststr, get_cache_path, modelscope_flag_set
 
 from huggingface_hub import snapshot_download
@@ -13,14 +13,14 @@ from huggingface_hub import snapshot_download
 class MindCubeBench(ImageMCQDataset):
     TYPE = 'MCQ'
 
-    LMUData_root = LMUDataRoot()
-    DATASET_URL = {}
-
     DATASET_URL = {
-        "MindCubeBench_tiny_raw_qa": "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/MindCubeBench_tiny_raw_qa.tsv",  # noqa: E501
-        "MindCubeBench_raw_qa": "https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/MindCubeBench_raw_qa.tsv"  # noqa: E501
+        'MindCubeBench_tiny_raw_qa': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/MindCubeBench_tiny_raw_qa.tsv',  # noqa: E501
+        'MindCubeBench_raw_qa': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/MindCubeBench_raw_qa.tsv'  # noqa: E501
     }
-    DATASET_MD5 = {key: None for key in DATASET_URL}
+    DATASET_MD5 = {
+        'MindCubeBench_tiny_raw_qa': '35f69fc30d7c2d2880417ce0769f5347',
+        'MindCubeBench_raw_qa': '6a53cd353bc93d8e3a87098249c806ad'
+    }
 
     def _task_category(self):
         return ['rotation', 'among', 'around']
@@ -144,13 +144,16 @@ class MindCubeBench(ImageMCQDataset):
         return [s for s in segs if s['value']]
 
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.spatial_bench.cal_scores import compute_mcq_score, eval_mcq_core
+        from .utils.spatial_bench.cal_scores import eval_mcq_score, build_mcq_score_fn
 
-        return eval_mcq_core(
+        # Select MCQ scoring function (rule-based or LLM-based) according to judge_kwargs['model'].
+        score_fn = build_mcq_score_fn(**judge_kwargs)
+
+        return eval_mcq_score(
             load_fn=load,
             eval_file=eval_file,
-            score_fn=compute_mcq_score,
+            score_fn=score_fn,
             group_col='category',
             order=self._task_category(),
-            dataset_name=getattr(self, 'dataset_name', 'MindCubeBench')
+            dataset_name=getattr(self, 'dataset_name', 'MindCubeBench'),
         )

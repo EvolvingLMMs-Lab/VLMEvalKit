@@ -1,4 +1,3 @@
-import re
 import ast
 import math
 import numpy as np
@@ -6,8 +5,13 @@ import pandas as pd
 import warnings
 
 from collections import OrderedDict
+from typing import Dict, Any, List
 
 from .matching_func import can_match_na, can_match_option
+from .llm_extract import extract_ans_by_llm
+from ..judge_util import build_judge
+from ....utils.mp_util import track_progress_rich
+from ....smp.vlm import gpt_key_set
 
 
 def exact_match(pred: str, target: str) -> float:
@@ -69,6 +73,7 @@ def _ensure_options_count_row(row, default_choices=4):
     return n if (isinstance(n, int) and n > 0) else default_choices
 
 
+# ---------- Rule-based scoring ----------
 def compute_mcq_score(df: pd.DataFrame) -> pd.DataFrame:
     preds_extracted, acc = [], []
     for _, r in df.iterrows():
@@ -145,19 +150,30 @@ def compute_caa_score(df_all: pd.DataFrame, default_choices: int = 4) -> float:
     return float((sum_Xi - sum_1_ni) / denom) if denom != 0 else 0.0
 
 
-def eval_mcq_core(
+# High-level evaluation core for MCQ-style datasets
+def eval_mcq_score(
     *,
     load_fn,
     eval_file: str,
     score_fn,
-    group_col: str = 'category',
-    order: list[str] | None = None,
+    group_col: str | list[str] = 'category',
+    order: list[str] | dict[str, list[str]] | None = None,
     dataset_name: str = 'MCQ'
 ):
     suffix = eval_file.split('.')[-1]
     result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
     base_no_suffix = eval_file[:-(len(suffix) + 1)]
-    xlsx_path = f"{base_no_suffix}_extract_matching.xlsx"
+
+    # Decide Excel filename according to actual judge type
+    judge_mode = getattr(score_fn, 'judge_mode', 'rule')
+    judge_model = getattr(score_fn, 'judge_model', None)
+
+    if judge_mode == 'llm':
+        judge_tag = f"llm_{judge_model}" if judge_model else "llm_matching"
+    else:
+        judge_tag = "extract_matching"
+
+    xlsx_path = f"{base_no_suffix}_{judge_tag}.xlsx"
     acc_tsv_path = f"{base_no_suffix}_acc.tsv"
 
     data = load_fn(eval_file)
@@ -167,30 +183,45 @@ def eval_mcq_core(
 
     mcq_scored = score_fn(data.copy())
 
-    if order is None:
-        order = []
-    if group_col in mcq_scored.columns:
-        present = list(mcq_scored[group_col].dropna().unique().tolist())
+    # ---------- group_cols / order_map ----------
+    if isinstance(group_col, str):
+        group_cols = [group_col]
     else:
-        present = []
-    remain = [c for c in present if c not in order]
-    cat_order = order + remain
+        group_cols = list(group_col)
+
+    if isinstance(order, dict) or order is None:
+        order_map: dict[str, list[str]] = order or {}
+    else:
+        order_map = {group_cols[0]: order}
 
     summary = OrderedDict()
     overall_acc = float(mcq_scored['hit'].mean()) if len(mcq_scored) else 0.0
     summary['overall'] = overall_acc * 100.0
 
-    if group_col in mcq_scored.columns:
+    # ---------- category && tasks ----------
+    for gc in group_cols:
+        if gc not in mcq_scored.columns:
+            continue
+
+        preferred = order_map.get(gc, []) or []
+        present = list(mcq_scored[gc].dropna().unique().tolist())
+        remain = [c for c in present if c not in preferred]
+        cat_order = preferred + remain
+
+        prefix = '' if len(group_cols) == 1 else f'{gc}.'
+
         for cat in cat_order:
-            sub = mcq_scored[mcq_scored[group_col] == cat]
+            sub = mcq_scored[mcq_scored[gc] == cat]
             if len(sub):
-                summary[f'{cat}_accuracy'] = float(sub['hit'].mean()) * 100.0
+                acc = float(sub['hit'].mean()) * 100.0
+                summary[f'{prefix}{cat}_accuracy'] = acc
 
     tab_keys = ", ".join(list(summary.keys()))
     tab_vals = ", ".join([f"{v:.3f}" for v in summary.values()])
     summary['tabulated_keys'] = tab_keys
     summary['tabulated_results'] = tab_vals
 
+    # ---------- pkl ----------
     try:
         import pickle
         with open(result_file, 'wb') as f:
@@ -199,11 +230,15 @@ def eval_mcq_core(
     except Exception as e:
         warnings.warn(f"[save] failed to save result to {result_file}: {e}")
 
+    # ---------- extract_matching.xlsx ----------
     try:
         prefer_front = [
-            'index', 'question_type', group_col,
+            'index', 'question_type',
+            group_cols[0] if group_cols else None,
             'prediction', 'pred_extracted', 'answer', 'hit'
         ]
+        prefer_front = [c for c in prefer_front if c is not None]
+
         merged = mcq_scored.copy()
         ordered_cols = [c for c in prefer_front if c in merged.columns] + \
                        [c for c in merged.columns if c not in prefer_front]
@@ -214,20 +249,261 @@ def eval_mcq_core(
     except Exception as e:
         warnings.warn(f"[save] failed to save extract xlsx to {xlsx_path}: {e}")
 
+    # ---------- acc.tsv ----------
     try:
         acc_df = pd.DataFrame(
-            [(k, v) for k, v in summary.items() if k not in ('tabulated_keys', 'tabulated_results')],
+            [(k, v) for k, v in summary.items()
+             if k not in ('tabulated_keys', 'tabulated_results')],
             columns=['metric', 'value']
         )
-        metric_order = ['overall'] + [f'{c}_accuracy' for c in order] + \
-                       [k for k in acc_df['metric'].tolist()
-                        if k not in (['overall'] + [f'{c}_accuracy' for c in order])]
-        acc_df = acc_df.set_index('metric').reindex(metric_order).reset_index()
-        acc_df = acc_df.dropna(subset=['value'])
-        acc_df.to_csv(acc_tsv_path, sep='\t', index=False)
+
+        metric_order = ['overall']
+
+        for gc in group_cols:
+            preferred = order_map.get(gc, []) or []
+            prefix = '' if len(group_cols) == 1 else f'{gc}.'
+            metric_order += [f'{prefix}{c}_accuracy' for c in preferred]
+
+        metric_order += [k for k in acc_df['metric'].tolist()
+                         if k not in metric_order]
+
+        acc_df = acc_df.set_index('metric').reindex(metric_order).dropna(subset=['value'])
+        wide = acc_df.T
+        wide.to_csv(acc_tsv_path, sep='\t', index=False, float_format='%.4f')
+
         print(f"[save] accuracy table saved to {acc_tsv_path}")
     except Exception as e:
         warnings.warn(f"[save] failed to save acc tsv to {acc_tsv_path}: {e}")
 
     print(f"[{dataset_name}] summary: {summary}")
     return summary
+
+
+# ---------- LLM-based scoring ----------
+def compute_score_llm(
+    df: pd.DataFrame,
+    model,
+    *,
+    mode: str = 'mcq',
+    max_retry: int = 3,
+    nproc: int = 4,
+) -> pd.DataFrame:
+    """
+    LLM-based MCQ/VQA scoring.
+
+    Args:
+        df: input dataframe (must contain at least question / prediction / answer).
+        model: judge model with .generate(prompt: str) -> str
+        mode: 'mcq' or 'vqa'
+        max_retry: max retry times per sample
+        nproc: number of worker threads for parallel judging
+    """
+
+    # Prepare task list
+    rows: List[Dict[str, Any]] = list(df.to_dict(orient='records'))
+
+    def _one_sample(row: Dict[str, Any]):
+        """
+        Single-sample evaluation for track_progress_rich.
+        Returns (grade, extracted), where grade ∈ {'A', 'B', 'C'}.
+        """
+        s = pd.Series(row)
+        grade, extracted = extract_ans_by_llm(
+            model=model,
+            row=s,
+            mode=mode,
+            max_retry=max_retry,
+        )
+        return grade, extracted
+
+    # Build tasks
+    tasks = [dict(row=r) for r in rows]
+
+    results = track_progress_rich(
+        func=_one_sample,
+        tasks=tasks,
+        nproc=nproc,
+    )
+
+    # Write back
+    grades = [g for g, _ in results]
+    extracted_list = [e for _, e in results]
+    hits = [1 if g == 'A' else 0 for g in grades]
+
+    df = df.copy()
+    df['judge_grade'] = grades          # 'A' / 'B' / 'C'
+    df['pred_extracted'] = extracted_list
+    df['hit'] = hits
+    return df
+
+
+def compute_na_score_llm(
+    df: pd.DataFrame,
+    model,
+    *,
+    mode: str = 'vqa',
+    max_retry: int = 3,
+    nproc: int = 4,
+) -> pd.DataFrame:
+    """
+    LLM-based NA scoring.
+
+    Workflow:
+      - Use the LLM to extract the final numeric answer (mode='vqa')
+      - Then compute MRA, same as in compute_na_score
+    """
+    # Prepare task list
+    rows = list(df.to_dict(orient='records'))
+
+    def _one_sample(row_dict):
+        """
+        Per-sample computation used by track_progress_rich.
+        Returns (grade, pred_num, mra).
+        """
+        row = pd.Series(row_dict)
+
+        grade, extracted = extract_ans_by_llm(
+            model=model,
+            row=row,
+            mode=mode,
+            max_retry=max_retry,
+        )
+
+        pred_num = to_float(extracted)
+        gt_num = to_float(row.get('answer', None))
+
+        if pred_num is None or gt_num is None or math.isnan(gt_num) or grade == 'C':
+            mra = 0.0
+        else:
+            mra = mean_relative_accuracy(pred_num, gt_num, 0.5, 0.95, 0.05)
+
+        return grade, pred_num, mra
+
+    # Build tasks
+    tasks = [dict(row_dict=r) for r in rows]
+
+    results = track_progress_rich(
+        func=_one_sample,
+        tasks=tasks,
+        nproc=nproc,
+    )
+
+    # Write back
+    grades = [g for (g, _, _) in results]
+    preds = [p for (_, p, _) in results]
+    mra_list = [m for (_, _, m) in results]
+
+    df = df.copy()
+    df['judge_grade'] = grades          # 'A' / 'B' / 'C'
+    df['pred_extracted'] = preds           # float or None
+    df['MRA:.5:.95:.05'] = mra_list
+    return df
+
+
+# ---------- Factory func ----------
+def _build_llm_judge(judge_kwargs: dict, *, task_name: str):
+    """
+    Try to build an LLM judge from judge_kwargs.
+
+    Returns:
+        - model instance if everything is OK;
+        - None if API key is missing or the judge is not working.
+    """
+    if not gpt_key_set():
+        warnings.warn(
+            f'OPENAI_API_KEY is not set properly, fallback to rule-based {task_name} scoring.'
+        )
+        return None
+
+    model = build_judge(**judge_kwargs)
+    if (model is None) or (hasattr(model, "working") and not model.working()):
+        warnings.warn(
+            f'LLM judge is not working properly, fallback to rule-based {task_name} scoring.'
+        )
+        return None
+
+    return model
+
+
+def _build_score_fn(
+    *,
+    task_name: str,
+    judge_kwargs: dict,
+    rule_fn: callable,
+    llm_fn: callable,
+    mode: str | None = None,
+):
+    """
+    Generic factory to choose between rule-based scoring and LLM-based scoring.
+
+    Args:
+        task_name: for logging only, e.g. "MCQ" / "NA".
+        judge_kwargs: kwargs used to build the judge model.
+        rule_fn: rule-based scorer, signature: rule_fn(df) -> df.
+        llm_fn: LLM-based scorer, signature:
+            llm_fn(df, model, mode=..., max_retry=..., nproc=...) -> df
+        mode: if not None, passed as mode=mode to llm_fn (for MCQ).
+    """
+    model_name = judge_kwargs.get('model', None)
+
+    def _make_rule_score_fn() -> callable:
+        def score_fn(df: pd.DataFrame) -> pd.DataFrame:
+            return rule_fn(df)
+
+        score_fn.judge_mode = 'rule'
+        # for rule-based path, if model_name is None, we treat it as 'extract_matching'
+        score_fn.judge_model = model_name or 'extract_matching'
+        return score_fn
+
+    # 1. Rule-based path
+    if model_name is None or model_name in ('exact_matching', 'extract_matching'):
+        return _make_rule_score_fn()
+
+    # 2. Build LLM judge
+    model = _build_llm_judge(judge_kwargs, task_name=task_name)
+    if model is None:
+        return _make_rule_score_fn()
+
+    max_retry = judge_kwargs.get('retry', 3)
+    nproc = judge_kwargs.get('nproc', judge_kwargs.get('api_nproc', 1) or 1)
+
+    # 3. Wrap into df -> df scorer
+    def score_fn(df: pd.DataFrame) -> pd.DataFrame:
+        kwargs = dict(
+            df=df,
+            model=model,
+            mode=mode,
+            max_retry=max_retry,
+            nproc=nproc,
+        )
+        return llm_fn(**kwargs)
+
+    score_fn.judge_mode = 'llm'
+    score_fn.judge_model = model_name
+    return score_fn
+
+
+def build_mcq_score_fn(**judge_kwargs):
+    """
+    Build an MCQ scoring function based on judge_kwargs['model'].
+    """
+    return _build_score_fn(
+        task_name="MCQ",
+        judge_kwargs=judge_kwargs,
+        rule_fn=compute_mcq_score,
+        llm_fn=compute_score_llm,   # note: this is the generic LLM scorer
+        mode='mcq',
+    )
+
+
+def build_na_score_fn(**judge_kwargs):
+    """
+    Build an NA scoring function based on judge_kwargs['model'].
+    """
+    return _build_score_fn(
+        task_name="NA",
+        judge_kwargs=judge_kwargs,
+        rule_fn=compute_na_score,
+        llm_fn=compute_na_score_llm,
+        mode='vqa',
+    )
