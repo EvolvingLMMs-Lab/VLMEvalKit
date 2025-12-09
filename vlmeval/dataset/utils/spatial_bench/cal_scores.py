@@ -204,8 +204,8 @@ def eval_mcq_score(
                 acc = float(sub['hit'].mean()) * 100.0
                 summary[f'{prefix}{cat}_accuracy'] = acc
 
-    tab_keys = ", ".join(list(summary.keys()))
-    tab_vals = ", ".join([f"{v:.3f}" for v in summary.values()])
+    tab_keys = ', '.join(list(summary.keys()))
+    tab_vals = ', '.join([f'{v:.3f}' for v in summary.values()])
     summary['tabulated_keys'] = tab_keys
     summary['tabulated_results'] = tab_vals
 
@@ -214,9 +214,9 @@ def eval_mcq_score(
         import pickle
         with open(result_file, 'wb') as f:
             pickle.dump({'mcq_scored': mcq_scored, 'summary': summary}, f)
-        print(f"[save] result saved to {result_file}")
+        print(f'[save] result saved to {result_file}')
     except Exception as e:
-        warnings.warn(f"[save] failed to save result to {result_file}: {e}")
+        warnings.warn(f'[save] failed to save result to {result_file}: {e}')
 
     # ---------- extract_matching.xlsx ----------
     try:
@@ -231,11 +231,11 @@ def eval_mcq_score(
         ordered_cols = [c for c in prefer_front if c in merged.columns] + \
                        [c for c in merged.columns if c not in prefer_front]
         merged = merged[ordered_cols]
-        with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
-            merged.to_excel(writer, sheet_name="ALL", index=False)
-        print(f"[save] extract & matching saved to {xlsx_path}")
+        with pd.ExcelWriter(xlsx_path, engine='openpyxl') as writer:
+            merged.to_excel(writer, sheet_name='ALL', index=False)
+        print(f'[save] extract & matching saved to {xlsx_path}')
     except Exception as e:
-        warnings.warn(f"[save] failed to save extract xlsx to {xlsx_path}: {e}")
+        warnings.warn(f'[save] failed to save extract xlsx to {xlsx_path}: {e}')
 
     # ---------- acc.tsv ----------
     try:
@@ -259,11 +259,11 @@ def eval_mcq_score(
         wide = acc_df.T
         wide.to_csv(acc_tsv_path, sep='\t', index=False, float_format='%.4f')
 
-        print(f"[save] accuracy table saved to {acc_tsv_path}")
+        print(f'[save] accuracy table saved to {acc_tsv_path}')
     except Exception as e:
-        warnings.warn(f"[save] failed to save acc tsv to {acc_tsv_path}: {e}")
+        warnings.warn(f'[save] failed to save acc tsv to {acc_tsv_path}: {e}')
 
-    print(f"[{dataset_name}] summary: {summary}")
+    print(f'[{dataset_name}] summary: {summary}')
     return summary
 
 
@@ -476,7 +476,7 @@ def build_mcq_score_fn(**judge_kwargs):
     Build an MCQ scoring function based on judge_kwargs['model'].
     """
     return _build_score_fn(
-        task_name="MCQ",
+        task_name='MCQ',
         judge_kwargs=judge_kwargs,
         rule_fn=compute_mcq_score,
         llm_fn=compute_score_llm,   # note: this is the generic LLM scorer
@@ -489,7 +489,7 @@ def build_na_score_fn(**judge_kwargs):
     Build an NA scoring function based on judge_kwargs['model'].
     """
     return _build_score_fn(
-        task_name="NA",
+        task_name='NA',
         judge_kwargs=judge_kwargs,
         rule_fn=compute_na_score,
         llm_fn=compute_na_score_llm,
