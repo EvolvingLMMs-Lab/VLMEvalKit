@@ -230,19 +230,7 @@ class VsiBench(VideoBaseDataset):
 
     def evaluate(self, eval_file, **judge_kwargs):
         from .utils.spatial_bench.cal_scores import build_mcq_score_fn, build_na_score_fn
-
-        suffix = eval_file.split('.')[-1]
-        result_file = eval_file.replace(f'.{suffix}', f'_result.pkl')
-        base_no_suffix = eval_file[:-(len(suffix) + 1)]
-
-        model_name = judge_kwargs.get('model', None)
-        if model_name in (None, 'exact_matching', 'extract_matching'):
-            judge_tag = '_extract_matching'
-        else:
-            judge_tag = f'_llm_{model_name}'
-
-        xlsx_path = f"{base_no_suffix}_{judge_tag}.xlsx"
-        acc_tsv_path = f"{base_no_suffix}_acc.tsv"
+        from .utils.spatial_bench.tools.files import build_eval_paths, get_judge_tag_from_score_fn
 
         data = load(eval_file)
         data = data.sort_values(by='index')
@@ -264,6 +252,16 @@ class VsiBench(VideoBaseDataset):
             na_scored = na_score_fn(na_data)
         else:
             na_scored = na_data
+
+        # extract judge_tag
+        score_fn_for_tag = mcq_score_fn or na_score_fn
+        if score_fn_for_tag is not None:
+            judge_tag = get_judge_tag_from_score_fn(score_fn_for_tag)
+        else:
+            # fallback: use extract_matching
+            judge_tag = 'extract_matching'
+
+        result_file, xlsx_path, acc_tsv_path = build_eval_paths(eval_file, judge_tag)
 
         summary = self._aggregate(mcq_scored, na_scored)
 

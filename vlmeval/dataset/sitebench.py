@@ -91,23 +91,12 @@ class SiteBenchBase:
 
     def evaluate(self, eval_file, **kwargs):
         from .utils.spatial_bench.cal_scores import build_mcq_score_fn, compute_caa_score
-
-        suffix = eval_file.split('.')[-1]
-        result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
-        base_no_suffix = eval_file[:-(len(suffix) + 1)]
+        from .utils.spatial_bench.tools.files import build_eval_paths, get_judge_tag_from_score_fn
 
         score_fn = build_mcq_score_fn(**kwargs)  # Select MCQ scoring func according to judge_kwargs['model'].
+        judge_tag = get_judge_tag_from_score_fn(score_fn)
 
-        # Read judge mode / model from the scorer's metadata.
-        judge_mode = getattr(score_fn, 'judge_mode', 'rule')              # 'rule' or 'llm'
-        judge_model = getattr(score_fn, 'judge_model', kwargs.get('model', None))
-
-        judge_tag = 'extract_matching'
-        if judge_mode == 'llm':
-            judge_tag = f'llm_{judge_model}' if judge_model else 'llm_matching'
-
-        xlsx_path = f"{base_no_suffix}_{judge_tag}.xlsx"
-        acc_tsv_path = f"{base_no_suffix}_acc.tsv"
+        result_file, xlsx_path, acc_tsv_path = build_eval_paths(eval_file, judge_tag)
 
         data = load(eval_file)
         if 'index' in data.columns:
