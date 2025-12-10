@@ -29,6 +29,12 @@ class VLM3R(BaseModel):
         delay_load: bool = False,
         tie_weights: bool = True,
         overwrite: bool = True,
+        # hyper-parameters
+        temperature: float = 0.0,
+        top_p: float = 1.0,
+        num_beams: int = 1,
+        do_sample: bool = False,
+        max_new_tokens: int = 16,
         # video params
         mm_resampler_type: str = 'spatial_pool',
         mm_spatial_pool_stride: int = 2,
@@ -80,7 +86,11 @@ class VLM3R(BaseModel):
 
         self.device_map = device_map
         self.device = device
-
+        self.temperature = temperature
+        self.top_p = top_p
+        self.num_beams = num_beams
+        self.do_sample = do_sample
+        self.max_new_tokens = max_new_tokens
         # Load constants and functions from official repo
         self.default_im_start_token = DEFAULT_IM_START_TOKEN
         self.default_im_end_token = DEFAULT_IM_END_TOKEN
@@ -236,15 +246,15 @@ class VLM3R(BaseModel):
         with torch.inference_mode():
             output_ids = self.model.generate(
                 inputs=input_ids,
-                images=image_tensor,  # Pass the list of image tensors
+                images=image_tensor,
                 attention_mask=attention_masks,
                 modalities=["video" for _ in videos] if len(videos) > 0 else ["image" for _ in images],
                 image_sizes=image_sizes if len(images) > 0 else None,
-                do_sample=False,  # True if gen_kwargs["temperature"] > 0 else False,
-                temperature=0.0,
-                max_new_tokens=16,
-                top_p=1.0,
-                num_beams=1,
+                do_sample=self.do_sample,
+                temperature=self.temperature,
+                max_new_tokens=self.max_new_tokens,
+                top_p=self.top_p,
+                num_beams=self.num_beams,
                 use_cache=self.use_cache,
                 stopping_criteria=[stopping_criteria]
             )
