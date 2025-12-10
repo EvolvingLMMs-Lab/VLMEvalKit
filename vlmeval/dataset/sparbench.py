@@ -9,11 +9,12 @@ from ..smp.misc import toliststr
 from ..smp.file import load
 from .image_base import ImageBaseDataset
 from .utils.spatial_bench.cal_scores import (
-    build_mcq_score_fn, build_na_score_fn, mean_relative_accuracy
+    build_mcq_score_fn,
+    build_na_score_fn,
+    get_judge_tag_from_score_fn,
+    mean_relative_accuracy,
 )
-from .utils.spatial_bench.tools.files import (
-    build_eval_paths, get_judge_tag_from_score_fn
-)
+from .utils.spatial_bench.tools.files import build_eval_paths
 
 
 class SparBench(ImageBaseDataset):
@@ -158,9 +159,8 @@ class SparBench(ImageBaseDataset):
         return msgs
 
     def evaluate(self, eval_file, **judge_kwargs):
-        data = load(eval_file)
-        data = data.sort_values(by='index')
-        data['prediction'] = [str(x) for x in data['prediction']]
+        data = load(eval_file).sort_values(by='index')
+        data['prediction'] = data['prediction'].astype(str)
 
         data['task_type'] = data['task'].apply(self.get_task_type)
 
@@ -168,36 +168,36 @@ class SparBench(ImageBaseDataset):
         na_data = data[data['task_type'] == 'NA'].copy()
         special_data = data[data['task_type'] == 'SPECIAL'].copy()
 
+        splits = {'mcq': mcq_data, 'na': na_data, 'special': special_data}
         print(f'[split] MCQ={len(mcq_data)}, NA={len(na_data)}, SPECIAL={len(special_data)}')
 
-        # Scoring func selection from judge_kwargs['model']
-        if len(mcq_data):
-            mcq_score_fn = build_mcq_score_fn(**judge_kwargs)
-            mcq_scored = mcq_score_fn(mcq_data)
-        else:
-            mcq_score_fn = None
-            mcq_scored = mcq_data
+        # 1. build score_fns
+        builders = {
+            'mcq': build_mcq_score_fn,
+            'na': build_na_score_fn,
+        }
+        score_fns = {
+            name: (builders[name](**judge_kwargs) if len(splits[name]) else None)
+            for name in ('mcq', 'na')
+        }
 
-        if len(na_data):
-            na_score_fn = build_na_score_fn(**judge_kwargs)
-            na_scored = na_score_fn(na_data)
-        else:
-            na_score_fn = None
-            na_scored = na_data
-
-        if len(special_data):
-            sp_scored = self.compute_special_score(special_data)
-        else:
-            sp_scored = special_data
-
-        # extract judge_tag from actual score_fn (handles fallback)
-        score_fn_for_tag = mcq_score_fn or na_score_fn
-        if score_fn_for_tag is not None:
-            judge_tag = get_judge_tag_from_score_fn(score_fn_for_tag)
+        # 2. pick a non-None score_fn to infer judge_tag
+        primary_score_fn = score_fns.get('mcq') or score_fns.get('na')
+        if primary_score_fn is not None:
+            judge_tag = get_judge_tag_from_score_fn(primary_score_fn)
         else:
             judge_tag = 'extract_matching'
 
         result_file, xlsx_path, acc_tsv_path = build_eval_paths(eval_file, judge_tag)
+
+        # 4. run scoring
+        mcq_scored = score_fns['mcq'](mcq_data) if score_fns['mcq'] else mcq_data
+        na_scored = score_fns['na'](na_data) if score_fns['na'] else na_data
+        sp_scored = (
+            self.compute_special_score(special_data)
+            if len(special_data)
+            else special_data
+        )
 
         summary = self._aggregate(mcq_scored, na_scored, sp_scored)
 
