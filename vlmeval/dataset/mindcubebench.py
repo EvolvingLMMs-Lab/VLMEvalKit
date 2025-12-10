@@ -28,16 +28,16 @@ class MindCubeBench(ImageMCQDataset):
     def prepare_tsv(self, url, file_md5=None, repo_id='MLL-Lab/MindCube'):
         data = super().prepare_tsv(url, file_md5)
 
-        SENTINEL_NAME = ".mindcubebench_extracted"
+        SENTINEL_NAME = '.mindcubebench_extracted'
         cache_path = get_cache_path(repo_id)
 
         if (cache_path and os.path.isdir(cache_path)
                 and os.path.isfile(os.path.join(cache_path, SENTINEL_NAME))):
             dataset_path = cache_path
         else:
-            def _write_sentinel(sentinel_path, text="ok"):
-                tmp = sentinel_path + ".tmp"
-                with open(tmp, "w", encoding="utf-8") as f:
+            def _write_sentinel(sentinel_path, text='ok'):
+                tmp = sentinel_path + '.tmp'
+                with open(tmp, 'w', encoding='utf-8') as f:
                     f.write(text)
                 os.replace(tmp, sentinel_path)
 
@@ -70,7 +70,7 @@ class MindCubeBench(ImageMCQDataset):
                                 out.write(src.read())
 
                 sentinel_path = os.path.join(pth, SENTINEL_NAME)
-                _write_sentinel(sentinel_path, text="done")
+                _write_sentinel(sentinel_path, text='done')
                 print('MindCube data extracted to current directory with original layout.')
 
             if modelscope_flag_set():
@@ -144,12 +144,12 @@ class MindCubeBench(ImageMCQDataset):
         return [s for s in segs if s['value']]
 
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.spatial_bench.cal_scores import eval_mcq_core, build_mcq_score_fn
+        from .utils.spatial_bench.cal_scores import eval_mcq_score, build_mcq_score_fn
 
         # Select MCQ scoring function (rule-based or LLM-based) according to judge_kwargs['model'].
         score_fn = build_mcq_score_fn(**judge_kwargs)
 
-        return eval_mcq_core(
+        return eval_mcq_score(
             load_fn=load,
             eval_file=eval_file,
             score_fn=score_fn,

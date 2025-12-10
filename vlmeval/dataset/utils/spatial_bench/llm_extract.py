@@ -1,8 +1,13 @@
 import re
+import os
 import pandas as pd
+
+from typing import Dict, Any, List
 
 from .tools.utils import build_choices
 from ....smp.log import get_logger
+from ....smp.file import load
+from ....utils.mp_util import track_progress_rich
 
 
 GENERIC_EXTRACT_JUDGE_PROMPT = (
@@ -90,7 +95,7 @@ def call_llm_extract(
     question: str,
     prediction: str,
     gold_answer: str,
-    options_block: str = ""
+    options_block: str = ''
 ):
     """
     Generic LLM call + parsing helper.
@@ -134,7 +139,7 @@ def call_llm_extract(
             rest = re.sub(r'^[\s\|,:]+', '', rest)  # strip leading whitespace + common separators
             rest = re.sub(r'^(?:\\[tnr])+', '', rest)  # turn "\t", "\n", "\r" to spaces
 
-            extracted = rest.strip() or "N/A"
+            extracted = rest.strip() or 'N/A'
             return grade, extracted
 
         # Case 2. Grade only
@@ -143,12 +148,12 @@ def call_llm_extract(
             grade = str(m2.group(1)).strip().upper()
             if grade not in ('A', 'B', 'C'):
                 grade = 'C'
-            return grade, "N/A"
+            return grade, 'N/A'
 
-        logger.warning(f"Unparsable LLM output: {ans}")
+        logger.warning(f'Unparsable LLM output: {ans}')
 
-    logger.warning("LLM extract failed after max_retry, fallback to INVALID.")
-    return "C", "N/A"
+    logger.warning('LLM extract failed after max_retry, fallback to INVALID.')
+    return 'C', 'N/A'
 
 
 def extract_ans_by_llm(
@@ -166,7 +171,7 @@ def extract_ans_by_llm(
         - extracted_answer: the final answer string extracted by the LLM
     """
     valid_mode = ['mcq', 'vqa']
-    assert mode in valid_mode, f"Extract llm func mode must be in {valid_mode}, but got {mode}!"
+    assert mode in valid_mode, f'Extract llm func mode must be in {valid_mode}, but got {mode}!'
 
     question = str(row.get('question', ''))
     prediction = str(row.get('prediction', ''))
@@ -176,26 +181,26 @@ def extract_ans_by_llm(
     if mode == 'mcq':
         # Build choices
         choices = build_choices(row)
-        option_str = build_option_str(choices) if choices else ""
+        option_str = build_option_str(choices) if choices else ''
 
         # Build options block for llm to know if there are options
-        options_block = ""
+        options_block = ''
         if option_str:
-            options_block = "Options:\n" + option_str + "\n"
+            options_block = 'Options:\n' + option_str + '\n'
         else:
-            options_block = ""
+            options_block = ''
 
         # Standard answer: prefer "letter + text" form if possible
         answer_letter = str(gold_raw).strip().upper()
         if choices and answer_letter in choices:
-            gold_answer = f"{answer_letter}. {choices[answer_letter]}"
+            gold_answer = f'{answer_letter}. {choices[answer_letter]}'
         else:
             # Fallback: use raw answer field
             gold_answer = str(gold_raw)
 
     # Mode vqa
     else:
-        options_block = ""
+        options_block = ''
         gold_answer = str(gold_raw)
 
     grade, extracted = call_llm_extract(
@@ -208,3 +213,100 @@ def extract_ans_by_llm(
     )
 
     return grade, extracted
+
+
+def parallel_llm_extract(
+    df: pd.DataFrame,
+    model,
+    *,
+    mode: str,
+    max_retry: int,
+    nproc: int,
+    cache_file: str | None = None,
+    key_col: str = 'index',
+) -> tuple[list, list]:
+    """
+    Run LLM-based answer extraction with optional cache.
+
+    Returns:
+        grades: list of 'A' / 'B' / 'C' (or None)
+        extracted_list: list of extracted answer strings (or None)
+    """
+    valid_mode = ['mcq', 'vqa']
+    assert mode in valid_mode, f'LLM extract mode must be in {valid_mode}, but got {mode}!'
+
+    df = df.copy()
+    rows: List[Dict[str, Any]] = list(df.to_dict(orient='records'))
+
+    def _one_sample(row: Dict[str, Any]):
+        """
+        Per-sample evaluation used by track_progress_rich.
+        Returns (grade, extracted), where grade ∈ {'A', 'B', 'C'}.
+        """
+        row = pd.Series(row)
+        grade, extracted = extract_ans_by_llm(
+            model=model,
+            row=row,
+            mode=mode,
+            max_retry=max_retry,
+        )
+        return grade, extracted
+
+    # ===== case 1: no cache, plain parallel run =====
+    if not cache_file:
+        tasks = [dict(row=r) for r in rows]
+        results = track_progress_rich(
+            func=_one_sample,
+            tasks=tasks,
+            nproc=nproc,
+        )
+        grades = [g for g, _ in results]
+        extracted_list = [e for _, e in results]
+        return grades, extracted_list
+
+    # ===== case 2: with cache, resume by key_col =====
+    # cache format: {key: (grade, extracted)}
+    cache: dict = {}
+    if os.path.exists(cache_file):
+        try:
+            cache = load(cache_file)
+            if not isinstance(cache, dict):
+                cache = {}
+        except Exception:
+            cache = {}
+
+    grades: list = [None] * len(rows)
+    extracted_list: list = [None] * len(rows)
+
+    tasks: list[dict] = []
+    keys: list = []
+    task_pos: list[int] = []
+
+    for i, row in enumerate(rows):
+        key = row.get(key_col, None)
+        if key is not None and key in cache:
+            val = cache[key]
+            if isinstance(val, (list, tuple)) and len(val) >= 2:
+                g, ex = val[0], val[1]
+            else:
+                g, ex = None, None
+            grades[i] = g
+            extracted_list[i] = ex
+        else:
+            tasks.append(dict(row=row))
+            keys.append(key)
+            task_pos.append(i)
+
+    if tasks:
+        results = track_progress_rich(
+            func=_one_sample,
+            tasks=tasks,
+            nproc=nproc,
+            save=cache_file,
+            keys=keys,
+        )
+        for pos, (g, ex) in zip(task_pos, results):
+            grades[pos] = g
+            extracted_list[pos] = ex
+
+    return grades, extracted_list

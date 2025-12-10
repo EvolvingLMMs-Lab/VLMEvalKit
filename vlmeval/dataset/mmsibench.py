@@ -25,17 +25,17 @@ class MMSIBench(ImageMCQDataset):
 
     def _task_category(self):
         return [
-            "Pos-Cam-Cam",
-            "Pos-Obj-Obj",
-            "Pos-Reg-Reg",
-            "Pos-Cam-Obj",
-            "Pos-Obj-Reg",
-            "Pos-Cam-Reg",
-            "Attr-Meas",
-            "Attr-Appr",
-            "Motion-Cam",
-            "Motion-Obj",
-            "MSR"
+            'Pos-Cam-Cam',
+            'Pos-Obj-Obj',
+            'Pos-Reg-Reg',
+            'Pos-Cam-Obj',
+            'Pos-Obj-Reg',
+            'Pos-Cam-Reg',
+            'Attr-Meas',
+            'Attr-Appr',
+            'Motion-Cam',
+            'Motion-Obj',
+            'MSR'
         ]
 
     def build_prompt(self, line):
@@ -54,7 +54,7 @@ class MMSIBench(ImageMCQDataset):
             if cand in line and not pd.isna(line[cand])
         }
 
-        # Prompt format aligned with mmsi code base
+        # Prompt format aligned with MMSI code base
         options_prompt = 'Options: '
         for key, item in options.items():
             options_prompt += f'{key}: {item}, '
@@ -85,12 +85,12 @@ class MMSIBench(ImageMCQDataset):
         return msgs
 
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.spatial_bench.cal_scores import eval_mcq_core, build_mcq_score_fn
+        from .utils.spatial_bench.cal_scores import eval_mcq_score, build_mcq_score_fn
 
         # Select MCQ scoring function (rule-based or LLM-based) according to judge_kwargs['model'].
         score_fn = build_mcq_score_fn(**judge_kwargs)
 
-        return eval_mcq_core(
+        return eval_mcq_score(
             load_fn=load,
             eval_file=eval_file,
             score_fn=score_fn,

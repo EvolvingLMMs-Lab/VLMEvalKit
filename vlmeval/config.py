@@ -79,6 +79,7 @@ ungrouped = {
     ),
     "Pixtral-12B": partial(Pixtral, model_path="mistralai/Pixtral-12B-2409"),
     "Falcon2-VLM-11B": partial(Falcon2VLM, model_path="tiiuae/falcon-11B-vlm"),
+    "VLM-3R": partial(VLM3R, model_path="Journey9ni/vlm-3r-llava-qwen2-lora"),
 }
 
 o1_key = os.environ.get('O1_API_KEY', None)
@@ -472,11 +473,52 @@ api_models = {
     "JTVL": partial(JTVLChatAPI, model="jt-vl-chat", temperature=0, retry=10),
     "JTVL-Mini": partial(JTVLChatAPI_Mini, model="jt-vl-chat-mini", temperature=0, retry=10),
     "JTVL-2B": partial(JTVLChatAPI_2B, model="jt-vl-chat-2b", temperature=0, retry=10),
+    "VideoChatOnlineV2": partial(VideoChatOnlineV2API, model="videochatonline_v2", temperature=0, retry=10),
     "Taiyi": partial(TaiyiAPI, model="taiyi", temperature=0, retry=10),
     # TeleMM
     "TeleMM": partial(TeleMMAPI, model="TeleAI/TeleMM", temperature=0, retry=10),
     "Qwen2.5-VL-32B-Instruct-SiliconFlow": partial(
         SiliconFlowAPI, model="Qwen/Qwen2.5-VL-32B-Instruct", temperature=0, retry=10),
+    "Qwen3-VL-8B--crop--arm_thinker_prompt--sglang": partial(
+        ARM_thinker,
+        mode="agent",
+        agent_repo_root="/path/to/your/ARM-Thinker",
+        model="Qwen/Qwen3-VL-8B-Instruct",
+        retry=10,
+        timeout=300,
+        api_base="http://100.97.158.184:38888/v1/chat/completions",
+        key="EMPTY",
+        temperature=0.0,
+        max_tokens=4096,
+        # agent params
+        max_round=16,
+        max_tool_response_length=4096,
+        tool_config_path="/path/to/your/ARM-Thinker/examples/self/multiturn/config/tool_config/image_zoom_in_tool_config.yaml",
+        # special for sglang server
+        use_role_tool=False,
+        system_template_type="CommonSystemTemplate",
+        # extra prompt to adapt to the ARM-Thinker prompt template [CommonSystemTemplate]
+        extra_pt="\n\n**Important Requirement:**\nThe given image is `original_image`. You must output your reasoning inside `<think>...</think>`. After reasoning, either output the final answer within `<answer>...</answer>` or call a tool within `<tool_call>...</tool_call>`. You may call tools multiple times across turns to assist with judgment or verification, **but only one tool per turn**. If a tool call fails, you can retry or stop and give your final answer. Once no more tool calls are needed, provide your final answer or judgment within `<answer>...</answer>`.",
+    ),
+    "Qwen3-VL-8B--crop--official_prompt--vllm": partial(
+        ARM_thinker,
+        mode="agent",
+        agent_repo_root="/path/to/your/ARM-Thinker",
+        model="Qwen/Qwen3-VL-8B-Instruct",
+        retry=10,
+        timeout=300,
+        api_base="http://100.97.203.103:40001/v1/chat/completions",
+        key="EMPTY",
+        temperature=0.0,
+        max_tokens=4096,
+        extra_pt="",
+        # agent params
+        max_round=16,
+        max_tool_response_length=4096,
+        system_template_type="Qwen3VLSystemTemplateWithTools",
+        tool_config_path="/path/to/your/ARM-Thinker/examples/self/multiturn/config/tool_config/image_zoom_in_tool_qwen3vl_config.yaml",
+        use_role_tool=True,
+    ),
     # lmdeploy api
     "lmdeploy": partial(
         LMDeployAPI,
@@ -2019,6 +2061,7 @@ spatial_related_models = {
 }
 
 sensenova_si_series = {
+    # SenseNova-SI-1.0 series
     "SenseNova-SI-InternVL3-2B": partial(
         InternVLChat, 
         model_path="sensenova/SenseNova-SI-InternVL3-2B", 
@@ -2031,6 +2074,7 @@ sensenova_si_series = {
         use_custom_prompt=False,
         version="V2.0"
     ),
+    # SenseNova-SI-1.1 series
     "SenseNova-SI-1.1-InternVL3-2B": partial(
         InternVLChat, 
         model_path="sensenova/SenseNova-SI-1.1-InternVL3-2B", 
@@ -2043,7 +2087,32 @@ sensenova_si_series = {
         use_custom_prompt=False,
         version="V2.0"
     ),
-    
+    "SenseNova-SI-1.1-Qwen2.5-VL-3B": partial(
+        Qwen2VLChat, 
+        model_path="sensenova/SenseNova-SI-1.1-Qwen2.5-VL-3B", 
+        min_pixels=1280 * 28 * 28,
+        max_pixels=16384 * 28 * 28,
+        use_custom_prompt=False,
+    ),
+    "SenseNova-SI-1.1-Qwen2.5-VL-7B": partial(
+        Qwen2VLChat, 
+        model_path="sensenova/SenseNova-SI-1.1-Qwen2.5-VL-7B", 
+        min_pixels=1280 * 28 * 28,
+        max_pixels=16384 * 28 * 28,
+        use_custom_prompt=False,
+    ),
+    "SenseNova-SI-1.1-Qwen3-VL-8B": partial(
+        Qwen3VLChat,
+        model_path="sensenova/SenseNova-SI-1.1-Qwen3-VL-8B",
+        use_custom_prompt=False,
+    ),
+    # SenseNova-SI-1.2 series
+    "SenseNova-SI-1.2-InternVL3-8B": partial(
+        InternVLChat, 
+        model_path="sensenova/SenseNova-SI-1.2-InternVL3-8B", 
+        use_custom_prompt=False,
+        version="V2.0"
+    ),
 }
 
 internvl_groups = [
