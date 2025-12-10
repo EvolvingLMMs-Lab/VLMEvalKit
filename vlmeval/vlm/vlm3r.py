@@ -1,7 +1,5 @@
-import os
 import logging
-from typing import List, Dict, Union, Optional, Tuple
-from datetime import timedelta
+from typing import Optional
 
 import math
 import torch
@@ -14,10 +12,7 @@ from .base import BaseModel
 
 
 class VLM3R(BaseModel):
-    """
-    Args:
-        BaseModel (_type_): _description_
-    """
+
     INSTALL_REQ = True
     INTERLEAVE = True
     VIDEO_LLM = True
@@ -28,10 +23,8 @@ class VLM3R(BaseModel):
         model_base: str = 'lmms-lab/LLaVA-NeXT-Video-7B-Qwen2',
         model_name: Optional[str] = None,
         conv_template: str = 'qwen_1_5',
-        attn_implementation: str = 'flash_attention_2',
         device_map: str = 'auto',
         device: str = "cuda:0",
-        torch_dtype: str = 'float16',
         use_cache: bool = True,
         delay_load: bool = False,
         tie_weights: bool = True,
@@ -48,6 +41,7 @@ class VLM3R(BaseModel):
         video_force_sample: bool = False,
         **kwargs
     ):
+        super().__init__()
         try:
             from llava.constants import (
                 DEFAULT_IM_END_TOKEN,
