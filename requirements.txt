@@ -12,6 +12,7 @@ json_repair
 math-verify
 matplotlib
 nltk
+num2words
 numpy
 omegaconf
 openai
