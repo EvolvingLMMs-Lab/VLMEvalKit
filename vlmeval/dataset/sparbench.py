@@ -159,8 +159,9 @@ class SparBench(ImageBaseDataset):
         return msgs
 
     def evaluate(self, eval_file, **judge_kwargs):
-        data = load(eval_file).sort_values(by='index')
-        data['prediction'] = data['prediction'].astype(str)
+        data = load(eval_file)
+        data = data.sort_values(by='index')
+        data['prediction'] = [str(x) for x in data['prediction']]
 
         data['task_type'] = data['task'].apply(self.get_task_type)
 
@@ -190,7 +191,7 @@ class SparBench(ImageBaseDataset):
 
         result_file, xlsx_path, acc_tsv_path = build_eval_paths(eval_file, judge_tag)
 
-        # 4. run scoring
+        # 3. run scoring
         mcq_scored = score_fns['mcq'](mcq_data) if score_fns['mcq'] else mcq_data
         na_scored = score_fns['na'](na_data) if score_fns['na'] else na_data
         sp_scored = (

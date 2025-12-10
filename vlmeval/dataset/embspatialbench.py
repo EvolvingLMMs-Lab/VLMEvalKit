@@ -44,9 +44,9 @@ class EmbSpatialBench(ImageMCQDataset):
             except Exception:
                 options = ast.literal_eval(options)
 
-        UpperLetters = list(string.ascii_uppercase)
+        upper_letters = list(string.ascii_uppercase)
         option_text = '\n'.join(
-            f'{UpperLetters[i]}: {options[i]}'
+            f'{upper_letters[i]}: {options[i]}'
             for i in range(len(options))
         )
 
