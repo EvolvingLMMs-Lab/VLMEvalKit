@@ -174,7 +174,7 @@ class SiteBenchBase:
         except Exception as e:
             warnings.warn(f'[save] failed to save acc tsv to {acc_tsv_path}: {e}')
 
-        print(f'[{getattr(self, "dataset_name", "MCQ")}] summary: {summary}')
+        print(f"[{getattr(self, 'dataset_name', 'MCQ')}] summary: {summary}")
         return summary
 
 

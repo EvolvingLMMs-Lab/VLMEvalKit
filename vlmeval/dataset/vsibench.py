@@ -70,7 +70,7 @@ class VsiBench(VideoBaseDataset):
         elif question_type in na_items:
             return 'NA'
         else:
-            raise ValueError(f'Unkwon question type: {question_type}')
+            raise ValueError(f'Unknown question type: {question_type}')
 
     def download_vsibench(self, repo_id='nyu-visionx/VSI-Bench'):
         cache_path = get_cache_path(repo_id)

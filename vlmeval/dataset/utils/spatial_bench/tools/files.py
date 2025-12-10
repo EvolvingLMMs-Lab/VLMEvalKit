@@ -10,8 +10,8 @@ def _judge_tag_from_mode_and_model(judge_mode: str | None, judge_model: str | No
         - 'llm_gpt-4o' / 'llm_matching'
     """
     if judge_mode == 'llm':
-        return f"llm_{judge_model}" if judge_model else "llm_matching"
-    return "extract_matching"
+        return f'llm_{judge_model}' if judge_model else 'llm_matching'
+    return 'extract_matching'
 
 
 def get_judge_tag_from_score_fn(score_fn) -> str:
