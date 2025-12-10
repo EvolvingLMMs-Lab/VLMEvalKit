@@ -21,8 +21,8 @@ COPY . .
 RUN pip install -e .
 
 # Install vlm3r
-RUN mkdir thrid_party && cd thrid_party
-WORKDIR /app/thrid_party
+RUN mkdir -p third_party
+WORKDIR /app/third_party
 RUN git clone --recursive https://github.com/VITA-Group/VLM-3R.git && \
     cd VLM-3R && \
     pip install -e .
@@ -39,7 +39,5 @@ RUN hf download lmms-lab-si/third-party-models --include "VLM3R/cut3r_512_dpt_4_
     rm -rf ./VLM-3R/CUT3R/src/VLM3R
 
 # Install some dependencies
-RUN pip install peft==0.10.0
-RUN pip install flash-attn==2.7.4.post1
-RUN pip install transformers==4.40.0
+RUN pip install peft==0.10.0 flash-attn==2.7.4.post1 transformers==4.40.0
 WORKDIR /app
