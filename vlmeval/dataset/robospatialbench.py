@@ -1,24 +1,22 @@
 import os
-import re
 import ast
 import pandas as pd
 
-from tqdm import tqdm
+from PIL import Image
 
 from .image_vqa import ImageVQADataset
-from ..smp.file import LMUDataRoot, load, dump
-from ..smp.misc import toliststr, get_cache_path, modelscope_flag_set
-
-from huggingface_hub import snapshot_download
+from .utils.spatial_bench.tools.utils import Point2DParser
+from ..smp.file import load, dump
+from ..smp.misc import toliststr
 
 
 class RoboSpatialBench(ImageVQADataset):
 
     DATASET_URL = {
-        'RoboSpatialHome': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/RoboSpatial.tsv'
+        'RoboSpatialHome': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/RoboSpatialHome.tsv',  # noqa: E501
     }
     DATASET_MD5 = {
-        'RoboSpatialHome': None
+        'RoboSpatialHome': 'e2d01075ce470bf8e06d3a16c8fa10bc'
     }
 
     def _task_category(self):
@@ -33,16 +31,25 @@ class RoboSpatialBench(ImageVQADataset):
         else:
             tgt_path = self.dump_image(line)
 
-        question = line['question']
+        raw_q = str(line['question'])
 
-        prompt = question
+        # Here we align prompt format with Qwen3-VL Technical Report (https://arxiv.org/pdf/2511.21631)
+        main_q = raw_q.split('Your answer should')[0].strip()
+        post_prompt = (
+            'Output the point coordinates in JSON format.\n'
+            'For example:\n'
+            '[\n'
+            '  {"point_2d": [x, y], "label": "point_1"}\n'
+            ']\n'
+        )
+        prompt = main_q + '\n\n' + post_prompt
 
         msgs = []
         if isinstance(tgt_path, list):
-            msgs.extend([dict(type='image', value=p) for p in tgt_path])
+            msgs.extend([{'type': 'image', 'value': p} for p in tgt_path])
         else:
-            msgs = [dict(type='image', value=tgt_path)]
-        msgs.append(dict(type='text', value=prompt))
+            msgs = [{'type': 'image', 'value': tgt_path}]
+        msgs.append({'type': 'text', 'value': prompt})
 
         return msgs
 
@@ -66,136 +73,82 @@ class RoboSpatialBench(ImageVQADataset):
                     if p1x == p2x or x <= xinters:
                         inside = not inside
             p1x, p1y = p2x, p2y
+
         return inside
 
     @staticmethod
-    def evaluate_answer(ground_truth, generated_answer):
+    def evaluate_answer(ground_truth, generated_answer, img_width=None, img_height=None):
         """
-        Evaluates if the generated answer is correct based on the ground truth.
-        Returns a tuple of (is_correct, is_binary_answer, parsed_answer, is_parsable).
-        """
-        gen_answer = generated_answer.strip().lower()
-        gt_lower = ground_truth.strip().lower()
+        Evaluate a single answer.
 
-        # Check if this is a binary yes/no question
-        if gt_lower in ["yes", "no"]:
+        Returns:
+            (is_correct, is_binary, parsed_answer, is_parsable)
+        """
+        gen_answer_raw = (generated_answer or '').strip()
+        gen_answer_lower = gen_answer_raw.lower()
+        gt_str = (ground_truth or '').strip()
+        gt_lower = gt_str.lower()
+
+        # 1) binary yes/no
+        if gt_lower in ('yes', 'no'):
             is_binary = True
-            is_gt_yes = (gt_lower == "yes")
-            is_parsable = len(gen_answer) > 0
+            is_gt_yes = (gt_lower == 'yes')
+            is_parsable = len(gen_answer_raw) > 0
             if is_gt_yes:
-                correct = gen_answer.startswith("yes")
+                correct = gen_answer_lower.startswith('yes')
             else:
-                correct = gen_answer.startswith("no")
-            return correct, is_binary, generated_answer.strip(), is_parsable
+                correct = gen_answer_lower.startswith('no')
+            return correct, is_binary, gen_answer_raw, is_parsable
 
-        # Numeric evaluation: ground_truth is a list of points defining a polygon
+        # 2) polygon case (GT is in [0, 1] normalized coords)
         is_binary = False
         parsed_answer = None
         is_parsable = False
 
+        # 2.1 parse GT polygon in [0, 1]
         try:
-            gt_polygon = ast.literal_eval(ground_truth)
-            if not isinstance(gt_polygon, list) or len(gt_polygon) < 3:
-                return False, is_binary, parsed_answer, is_parsable
-
-            # (x, y)
-            tuple_match = re.search(r'\(\s*(\d+\.?\d*)\s*,\s*(\d+\.?\d*)\s*\)', generated_answer)
-            if tuple_match:
-                try:
-                    x = float(tuple_match.group(1))
-                    y = float(tuple_match.group(2))
-                    parsed_answer = (x, y)
-                    is_parsable = True
-                    correct = RoboSpatialBench.point_in_polygon(x, y, gt_polygon)
-                    return correct, is_binary, parsed_answer, is_parsable
-                except (ValueError, TypeError):
-                    pass
-
-            # [x, y]
-            list_match = re.search(r'\[\s*(\d+\.?\d*)\s*,\s*(\d+\.?\d*)\s*\]', generated_answer)
-            if list_match:
-                try:
-                    x = float(list_match.group(1))
-                    y = float(list_match.group(2))
-                    parsed_answer = (x, y)
-                    is_parsable = True
-                    correct = RoboSpatialBench.point_in_polygon(x, y, gt_polygon)
-                    return correct, is_binary, parsed_answer, is_parsable
-                except (ValueError, TypeError):
-                    pass
-
-            # fallback: 提取第一个 [...]，用 literal_eval 兜底
-            try:
-                match = re.search(r'\[(.*?)\]', generated_answer, re.DOTALL)
-                if match is None:
-                    return False, is_binary, parsed_answer, is_parsable
-
-                list_content = match.group(1)
-                list_content = re.sub(r',(\S)', r', \1', list_content)
-                list_content = list_content.strip()
-                if list_content.endswith(','):
-                    list_content = list_content[:-1]
-
-                list_str = '[' + list_content + ']'
-
-                try:
-                    gen_val = ast.literal_eval(list_str)
-                except (SyntaxError, ValueError):
-                    tuple_match = re.search(
-                        r'\(\s*(\d+\.?\d*)\s*,\s*(\d+\.?\d*)\s*\)', list_content
-                    )
-                    if tuple_match:
-                        x = float(tuple_match.group(1))
-                        y = float(tuple_match.group(2))
-                        parsed_answer = (x, y)
-                        is_parsable = True
-                        correct = RoboSpatialBench.point_in_polygon(x, y, gt_polygon)
-                        return correct, is_binary, parsed_answer, is_parsable
-                    else:
-                        return False, is_binary, parsed_answer, is_parsable
-
-                # 归一到 (x, y)
-                if isinstance(gen_val, list):
-                    if len(gen_val) == 0:
-                        return False, is_binary, parsed_answer, is_parsable
-                    if len(gen_val) == 2 and all(isinstance(v, (int, float)) for v in gen_val):
-                        gen_point = tuple(gen_val)
-                    elif isinstance(gen_val[0], tuple):
-                        gen_point = gen_val[0]
-                    elif isinstance(gen_val[0], list) and len(gen_val[0]) == 2:
-                        gen_point = tuple(gen_val[0])
-                    else:
-                        return False, is_binary, parsed_answer, is_parsable
-                elif isinstance(gen_val, tuple):
-                    gen_point = gen_val
-                else:
-                    return False, is_binary, parsed_answer, is_parsable
-
-                if not (isinstance(gen_point, tuple) and len(gen_point) == 2):
-                    return False, is_binary, parsed_answer, is_parsable
-
-                x, y = float(gen_point[0]), float(gen_point[1])
-                parsed_answer = (x, y)
-                is_parsable = True
-                correct = RoboSpatialBench.point_in_polygon(x, y, gt_polygon)
-                return correct, is_binary, parsed_answer, is_parsable
-            except Exception:
-                return False, is_binary, parsed_answer, is_parsable
-
+            raw_poly = ast.literal_eval(gt_str)
         except Exception as e:
-            print(f"Error evaluating answer: {e}")
+            print(f'[WARN] failed to parse ground_truth polygon: {ground_truth} ({e})')
             return False, is_binary, parsed_answer, is_parsable
 
+        if not isinstance(raw_poly, (list, tuple)) or len(raw_poly) < 3:
+            return False, is_binary, parsed_answer, is_parsable
+
+        gt_polygon = []
+        for pt in raw_poly:
+            if not (isinstance(pt, (list, tuple)) and len(pt) == 2):
+                continue
+            gx, gy = float(pt[0]), float(pt[1])
+            # dataset convention: GT already in [0, 1]
+            gt_polygon.append((gx, gy))
+
+        if len(gt_polygon) < 3:
+            return False, is_binary, parsed_answer, is_parsable
+
+        # 2.2 parse predicted point as [0, 1]
+        try:
+            w = img_width if img_width is not None else 1
+            h = img_height if img_height is not None else 1
+            pts = Point2DParser.parse(gen_answer_raw, int(w), int(h), output='norm')
+        except Exception as e:
+            print(f'[WARN] failed to parse prediction: {generated_answer} ({e})')
+            return False, is_binary, parsed_answer, is_parsable
+
+        if pts is None or len(pts) == 0:
+            return False, is_binary, parsed_answer, is_parsable
+
+        x, y = float(pts[0, 0]), float(pts[0, 1])
+        parsed_answer = (x, y)
+        is_parsable = True
+        correct = RoboSpatialBench.point_in_polygon(x, y, gt_polygon)
+        return correct, is_binary, parsed_answer, is_parsable
+
     def evaluate(self, eval_file, **judge_kwargs):
-        suffix = eval_file.split('.')[-1]
-        result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
+        from .utils.spatial_bench.tools.files import build_eval_paths
 
-        base_no_suffix = eval_file[:-(len(suffix) + 1)]
-        xlsx_path = f"{base_no_suffix}_results.xlsx"
-        acc_tsv_path = f"{base_no_suffix}_acc.tsv"
+        result_file, xlsx_path, acc_tsv_path = build_eval_paths(eval_file, judge_tag='Point2D')
 
-        # Load model predictions (DataFrame; must contain columns like
-        # question / answer / prediction / category)
         data = load(eval_file)
         if 'index' in data.columns:
             data = data.sort_values(by='index')
@@ -210,15 +163,16 @@ class RoboSpatialBench(ImageVQADataset):
         parsed_answer_list = []
         is_parsable_list = []
 
-        # Iterate rows and score one by one
+        # main loop
         for _, row in data.iterrows():
+            idx = int(row['index'])
             gt = row['answer']
             pred = row['prediction']
             category = row['category'] or 'unknown'
 
             assert category in self._task_category(), (
-                f"Except RoboSpatial category to be one of {self._task_category()}, "
-                f"but got {category}."
+                f'Except RoboSpatial category to be one of {self._task_category()}, '
+                f'but got {category}.'
             )
 
             if category not in category_stats:
@@ -226,10 +180,12 @@ class RoboSpatialBench(ImageVQADataset):
             category_stats[category]['num_total'] += 1
             num_total += 1
 
-            # Call unified evaluation logic (decides yes/no or polygon
-            # based on the ground-truth format)
+            img_path = os.path.join(self.img_root, f'{idx}.png')
+            with Image.open(img_path) as img:
+                img_w, img_h = img.size  # width, height
+
             correct, is_binary, parsed_answer, is_parsable = RoboSpatialBench.evaluate_answer(
-                gt, pred
+                gt, pred, img_w, img_h
             )
 
             if not is_parsable:
@@ -243,7 +199,7 @@ class RoboSpatialBench(ImageVQADataset):
             parsed_answer_list.append(None if parsed_answer is None else str(parsed_answer))
             is_parsable_list.append(bool(is_parsable))
 
-        # Attach evaluation fields back to the DataFrame
+        # attach evaluation fields
         data['is_correct'] = is_correct_list
         data['is_binary'] = is_binary_list
         data['parsed_answer'] = parsed_answer_list
@@ -251,39 +207,37 @@ class RoboSpatialBench(ImageVQADataset):
 
         accuracy = 100.0 * num_correct / num_total if num_total > 0 else 0.0
 
-        # Save detailed results
+        # save detailed results
         dump(data, result_file)
 
-        # Export xlsx (for manual inspection)
+        # optional xlsx export
         try:
             data.to_excel(xlsx_path, index=False)
         except Exception as e:
-            print(f"[WARN] failed to save xlsx to {xlsx_path}: {e}")
+            print(f'[WARN] failed to save xlsx to {xlsx_path}: {e}')
 
-        # Aggregate accuracy results into a single table and save as TSV
+        # aggregate accuracy to TSV
         rows = []
 
-        # Overall summary row
         rows.append(
             dict(
-                dataset="RoboSpatial",
-                category="ALL",
+                dataset='RoboSpatial',
+                category='ALL',
                 accuracy=accuracy,
                 num_correct=num_correct,
                 num_total=num_total,
             )
         )
 
-        # Per-category rows
         for cat, stat in category_stats.items():
-            cat_total = stat["num_total"]
-            cat_acc = 100.0 * stat["num_correct"] / cat_total if cat_total > 0 else 0.0
+            cat_total = stat['num_total']
+            cat_acc = 100.0 * stat['num_correct'] / cat_total if cat_total > 0 else 0.0
             rows.append(
                 dict(
-                    dataset="RoboSpatial",
+                    dataset='RoboSpatial',
                     category=cat,
                     accuracy=cat_acc,
-                    num_correct=stat["num_correct"],
+                    num_correct=stat['num_correct'],
                     num_total=cat_total,
                 )
             )
@@ -291,21 +245,21 @@ class RoboSpatialBench(ImageVQADataset):
         acc_df = pd.DataFrame(rows)
         acc_df.to_csv(
             acc_tsv_path,
-            sep="\t",
+            sep='\t',
             index=False,
-            float_format="%.2f",
+            float_format='%.2f',
         )
 
         print(
-            f"[RoboSpatial] accuracy = {accuracy:.2f} "
-            f"(num_correct={num_correct}, num_total={num_total}, "
-            f"illformed_resp={illformed_responses})"
+            f'[RoboSpatial] accuracy = {accuracy:.2f} '
+            f'(num_correct={num_correct}, num_total={num_total}, '
+            f'illformed_resp={illformed_responses})'
         )
 
         return {
-            "accuracy": accuracy,
-            "num_correct": num_correct,
-            "num_total": num_total,
-            "illformed_responses": illformed_responses,
-            "category_stats": category_stats,
+            'accuracy': accuracy,
+            'num_correct': num_correct,
+            'num_total': num_total,
+            'illformed_responses': illformed_responses,
+            'category_stats': category_stats,
         }
