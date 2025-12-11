@@ -32,17 +32,21 @@ class RoboSpatialBench(ImageVQADataset):
             tgt_path = self.dump_image(line)
 
         raw_q = str(line['question'])
+        category = line['category']
 
-        # Here we align prompt format with Qwen3-VL Technical Report (https://arxiv.org/pdf/2511.21631)
-        main_q = raw_q.split('Your answer should')[0].strip()
-        post_prompt = (
-            'Output the point coordinates in JSON format.\n'
-            'For example:\n'
-            '[\n'
-            '  {"point_2d": [x, y], "label": "point_1"}\n'
-            ']\n'
-        )
-        prompt = main_q + '\n\n' + post_prompt
+        if category == 'context':
+            # Here we align prompt format with Qwen3-VL Technical Report (https://arxiv.org/pdf/2511.21631)
+            main_q = raw_q.split('Your answer should')[0].strip()
+            post_prompt = (
+                'Output the point coordinates in JSON format.\n'
+                'For example:\n'
+                '[\n'
+                '  {"point_2d": [x, y], "label": "point_1"}\n'
+                ']\n'
+            )
+            prompt = main_q + '\n\n' + post_prompt
+        else:
+            prompt = raw_q
 
         msgs = []
         if isinstance(tgt_path, list):

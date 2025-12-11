@@ -92,6 +92,7 @@ class RefSpatialBench(ImageVQADataset):
 
         question = line['question']
 
+        # Here we align prompt format with Qwen3-VL Technical Report (https://arxiv.org/pdf/2511.21631)
         prompt = f'{question}'
         post_prompt = (
             'Output the point coordinates in JSON format.\n'
@@ -139,7 +140,7 @@ class RefSpatialBench(ImageVQADataset):
         Always return pixel coordinates.
         """
         Point2DParser.log_hint(task_name=self.dataset_name)
-        return Point2DParser.parse(pred_text, width, height)
+        return Point2DParser.parse(pred_text, width, height, output='pixel')
 
     def evaluate(self, eval_file, **judge_kwargs):
         from .utils.spatial_bench.tools.files import build_eval_paths
