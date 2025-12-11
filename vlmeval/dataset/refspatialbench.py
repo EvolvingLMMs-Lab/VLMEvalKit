@@ -1,30 +1,27 @@
 import os
-import re
 import ast
 import pandas as pd
 import numpy as np
-import json
 
-from tqdm import tqdm
 from PIL import Image
 from collections import defaultdict
+from huggingface_hub import snapshot_download
 
 from .image_vqa import ImageVQADataset
-from ..smp.file import LMUDataRoot, load, dump
+from .utils.spatial_bench.tools.utils import Point2DParser
+from ..smp.file import load, dump
 from ..smp.misc import toliststr, get_cache_path, modelscope_flag_set
-
-from huggingface_hub import snapshot_download
 
 
 class RefSpatialBench(ImageVQADataset):
 
     DATASET_URL = {
-        'RefSpatial': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/RefSpatial.tsv',
-        'RefSpatial_wo_unseen': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/RefSpatial_wo_unseen.tsv'
+        'RefSpatial': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/RefSpatial.tsv',
+        'RefSpatial_wo_unseen': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/RefSpatial_wo_unseen.tsv',  # noqa: E501
     }
     DATASET_MD5 = {
-        'RefSpatial': None,
-        'RefSpatial_wo_unseen': None
+        'RefSpatial': 'd8c6d38bab73922aae4c19b027bbe4e5',
+        'RefSpatial_wo_unseen': 'ad35a8b0e40878e2b4c9a74b93dd9011',
     }
 
     def _task_category(self):
@@ -33,16 +30,16 @@ class RefSpatialBench(ImageVQADataset):
     def prepare_tsv(self, url, file_md5=None, repo_id='BAAI/RefSpatial-Bench'):
         data = super().prepare_tsv(url, file_md5)
 
-        SENTINEL_NAME = ".refspatial_extracted"
+        SENTINEL_NAME = '.refspatial_extracted'
         cache_path = get_cache_path(repo_id)
 
         if (cache_path and os.path.isdir(cache_path)
                 and os.path.isfile(os.path.join(cache_path, SENTINEL_NAME))):
             dataset_path = cache_path
         else:
-            def _write_sentinel(sentinel_path, text="ok"):
-                tmp = sentinel_path + ".tmp"
-                with open(tmp, "w", encoding="utf-8") as f:
+            def _write_sentinel(sentinel_path, text='ok'):
+                tmp = sentinel_path + '.tmp'
+                with open(tmp, 'w', encoding='utf-8') as f:
                     f.write(text)
                 os.replace(tmp, sentinel_path)
 
@@ -53,7 +50,7 @@ class RefSpatialBench(ImageVQADataset):
                 dataset_path = snapshot_download(repo_id=repo_id, repo_type='dataset')
 
             sentinel_path = os.path.join(dataset_path, SENTINEL_NAME)
-            _write_sentinel(sentinel_path, text="done")
+            _write_sentinel(sentinel_path, text='done')
 
         # === Transfer rel path to abs path ===
         if 'image_path' in data.columns:
@@ -94,9 +91,17 @@ class RefSpatialBench(ImageVQADataset):
             tgt_path = self.dump_image(line)
 
         question = line['question']
-        suffix = line['suffix']
 
-        prompt = f"{question} {suffix}"
+        prompt = f'{question}'
+        post_prompt = (
+            'Output the point coordinates in JSON format.\n'
+            'For example:\n'
+            '[\n'
+            '  {"point_2d": [x, y], "label": "point_1"}\n'
+            ']\n'
+        )
+
+        prompt += post_prompt
 
         msgs = []
         if isinstance(tgt_path, list):
@@ -107,28 +112,44 @@ class RefSpatialBench(ImageVQADataset):
 
         return msgs
 
-    def evaluate(self, eval_file, **judge_kwargs):
+    @staticmethod
+    def _normalize_path(p):
         """
-        eval_file: TSV/JSONL，已经包含模型预测后的表格，至少有：
-        - category
-        - mask_path
-        - prediction    (字符串形式: '(x,y)' 或 '[(x0,y0,x1,y1), ...]' 等)
+        Normalize a list-like or stringified list to a single path string.
+        """
+        if isinstance(p, (list, tuple)):
+            return p[0]
+        if isinstance(p, str) and p.startswith('[') and p.endswith(']'):
+            try:
+                v = ast.literal_eval(p)
+                if isinstance(v, (list, tuple)) and v:
+                    return v[0]
+            except Exception:
+                pass
+        return p
 
-        返回:
-        {
-            "overall": overall_acc,
-            "location": acc_location,
-            "placement": acc_placement,
-            "unseen": acc_unseen,
-        }
+    def parse_prediction(self, pred_text: str, width: int, height: int) -> np.ndarray:
         """
-        # 用你自己的 load 封装读表
+        Parse raw model output into pixel coordinates of shape (N, 2).
+
+        Default: use Point2DParser (JSON/Python literal with 'point_2d'/'point'
+        or fallback '(x, y)' / '(x0, y0, x1, y1)').
+
+        Override this method if your model uses a different format.
+        Always return pixel coordinates.
+        """
+        Point2DParser.log_hint(task_name=self.dataset_name)
+        return Point2DParser.parse(pred_text, width, height)
+
+    def evaluate(self, eval_file, **judge_kwargs):
+        from .utils.spatial_bench.tools.files import build_eval_paths
+
         data = load(eval_file)
         if 'index' in data.columns:
             data = data.sort_values(by='index')
-
-        # 统一成字符串，避免后面出类型问题
         data['prediction'] = data['prediction'].astype(str)
+
+        result_file, xlsx_path, acc_tsv_path = build_eval_paths(eval_file, judge_tag='Point2D')
 
         required = ['category', 'mask_path', 'prediction']
         for col in required:
@@ -138,20 +159,20 @@ class RefSpatialBench(ImageVQADataset):
         acc_all = []
         acc_by_cat = defaultdict(list)
 
+        score_list = []
+        num_points_list = []
+        is_parsable_list = []
+
         for _, row in data.iterrows():
             cat = str(row['category']).lower()
             pred_text = row['prediction']
 
-            # 处理 mask 路径：可能是 ['xxx.png'] 这样的形式
             mask_raw = row['mask_path']
-            mask_path = _normalize_path(mask_raw)
-
+            mask_path = self._normalize_path(mask_raw)
             mask_path = str(mask_path)
 
-            print(f"mask path: {mask_path}")
-
             if not os.path.exists(mask_path):
-                print(f"[WARN] mask not found: {mask_path}")
+                print(f'[WARNING] mask not found: {mask_path}')
                 continue
 
             mask = np.array(Image.open(mask_path)) / 255.0
@@ -159,107 +180,62 @@ class RefSpatialBench(ImageVQADataset):
                 mask = mask[:, :, 0]
             mask = (mask > 0).astype(np.uint8)
 
-            print(f"mask loaded, pred_text: {pred_text}")
-
-            try:
-                points = _text2pts(pred_text, mask.shape[1], mask.shape[0])
-            except Exception as e:
-                print(f"[WARN] failed to parse prediction: {pred_text} ({e})")
-                continue
-
-            print('mask prepared')
-
             acc = 0.0
-            if len(points) > 0:
-                in_range = (
-                    (points[:, 0] >= 0)
-                    & (points[:, 0] < mask.shape[1])
-                    & (points[:, 1] >= 0)
-                    & (points[:, 1] < mask.shape[0])
-                )
-                if in_range.any():
-                    vals = mask[points[in_range, 1], points[in_range, 0]]
-                    # 图外的点补 0
-                    vals = np.concatenate([vals, np.zeros(points.shape[0] - in_range.sum())])
-                    acc = float(vals.mean())
+            try:
+                points = self.parse_prediction(pred_text, mask.shape[1], mask.shape[0])
+                is_parsable = True
+                num_points = len(points)
+
+                if len(points) > 0:
+                    in_range = (
+                        (points[:, 0] >= 0)
+                        & (points[:, 0] < mask.shape[1])
+                        & (points[:, 1] >= 0)
+                        & (points[:, 1] < mask.shape[0])
+                    )
+                    if in_range.any():
+                        vals = mask[points[in_range, 1], points[in_range, 0]]
+                        # Out-of-range points count as 0
+                        vals = np.concatenate([vals, np.zeros(points.shape[0] - in_range.sum())])
+                        acc = float(vals.mean())
+
+            except Exception as e:
+                print(f'[WARN] failed to parse prediction: {pred_text} ({e})')
 
             acc_all.append(acc)
             acc_by_cat[cat].append(acc)
 
+            score_list.append(acc)
+            num_points_list.append(num_points)
+            is_parsable_list.append(is_parsable)
+
         if not acc_all:
-            raise ValueError("No valid accuracy computed; check eval_file format and mask_path.")
+            raise ValueError('No valid accuracy computed; check eval_file format and mask_path.')
 
         overall = float(np.mean(acc_all))
-        results = {"overall": overall}
+
+        data['score'] = score_list
+        data['num_points'] = num_points_list
+        data['is_parsable'] = is_parsable_list
+
+        dump(data, result_file)
+        try:
+            data.to_excel(xlsx_path, index=False)
+        except Exception as e:
+            print(f'[WARN] failed to save xlsx to {xlsx_path}: {e}')
+
+        results = {'overall': overall}
         for cat in self._task_category():
             vals = acc_by_cat.get(cat, [])
             if vals:
                 results[cat] = float(np.mean(vals))
 
+        acc_df = pd.DataFrame([results])
+        acc_df.to_csv(
+            acc_tsv_path,
+            sep="\t",
+            index=False,
+            float_format="%.6f",
+        )
+
         return results
-
-
-def _text2pts(text: str, width=640, height=480) -> np.ndarray:
-    """
-    从自由文本中解析 (x, y) 或 (x0, y0, x1, y1) 坐标。
-    对每个 vector 自适应判断是归一化(0~1)还是像素坐标：
-      - 若所有值在 [0, 1.5] 之间，视为归一化 -> 乘以宽高
-      - 否则视为像素坐标 -> 直接使用
-    """
-    pattern = r"\(([-+]?\d+\.?\d*(?:,\s*[-+]?\d+\.?\d*)*?)\)"
-    matches = re.findall(pattern, text)
-    points = []
-
-    for match in matches:
-        nums = [float(num) for num in match.split(',')]
-        # 判定是否“看起来像归一化”
-        max_abs = max(abs(v) for v in nums)
-        is_norm = (0.0 <= max_abs <= 1.5)  # 留一点余量，防止 1.0 / 1.00 这种
-
-        if len(nums) == 2:
-            x, y = nums
-            if is_norm:
-                x = x * width
-                y = y * height
-            points.append((int(round(x)), int(round(y))))
-
-        elif len(nums) == 4:
-            x0, y0, x1, y1 = nums
-            if is_norm:
-                x0 = x0 * width
-                y0 = y0 * height
-                x1 = x1 * width
-                y1 = y1 * height
-
-            x0, y0, x1, y1 = map(int, map(round, (x0, y0, x1, y1)))
-            # 避免 y1<y0 或 x1<x0 的反向情况
-            if x1 < x0:
-                x0, x1 = x1, x0
-            if y1 < y0:
-                y0, y1 = y1, y0
-
-            # 将框展开为所有像素点（如果太大，可以视情况改成采样）
-            h = max(0, y1 - y0)
-            w = max(0, x1 - x0)
-            if h > 0 and w > 0:
-                yy, xx = np.where(np.ones((h, w), dtype=np.uint8))
-                pts = np.stack([xx + x0, yy + y0], axis=1)
-                points.extend(pts.tolist())
-
-    return np.array(points, dtype=int)
-
-
-def _normalize_path(p):
-    """把 ['xxx.png'] 或 ['xxx'] 字符串 / list 统一成单个 path 字符串"""
-    # 已经是 list/tuple
-    if isinstance(p, (list, tuple)):
-        return p[0]
-    # 是形如 "['xxx']" 的字符串
-    if isinstance(p, str) and p.startswith('[') and p.endswith(']'):
-        try:
-            v = ast.literal_eval(p)
-            if isinstance(v, (list, tuple)) and v:
-                return v[0]
-        except Exception:
-            pass
-    return p
