@@ -19,10 +19,12 @@ from huggingface_hub import snapshot_download
 class RefSpatialBench(ImageVQADataset):
 
     DATASET_URL = {
-        'RefSpatial': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/RefSpatial.tsv'
+        'RefSpatial': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/RefSpatial.tsv',
+        'RefSpatial_wo_unseen': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/RefSpatial_wo_unseen.tsv'
     }
     DATASET_MD5 = {
-        'RefSpatial': None
+        'RefSpatial': None,
+        'RefSpatial_wo_unseen': None
     }
 
     def _task_category(self):
