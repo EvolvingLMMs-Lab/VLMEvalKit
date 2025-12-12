@@ -1,6 +1,7 @@
 import os
 import ast
 import pandas as pd
+import numpy as np
 
 from PIL import Image
 
@@ -80,8 +81,23 @@ class RoboSpatialBench(ImageVQADataset):
 
         return inside
 
+    def parse_prediction(self, pred_text: str, width: int, height: int) -> np.ndarray:
+        """
+        Parse raw model output into normalized coordinates of shape (N, 2),
+        where each (x, y) is in [0, 1].
+
+        Default: use Point2DParser (JSON/Python literal with 'point_2d'/'point'
+        or fallback '(x, y)' / '(x0, y0, x1, y1)'), and return [0, 1]-normalized
+        coordinates.
+
+        Override this method if your model uses a different format.
+        Always return normalized coordinates in [0, 1].
+        """
+        Point2DParser.log_hint(task_name=getattr(self, 'dataset_name', 'RoboSpatialHome'))
+        return Point2DParser.parse(pred_text, width, height, output='norm')
+
     @staticmethod
-    def evaluate_answer(ground_truth, generated_answer, img_width=None, img_height=None):
+    def evaluate_answer(ground_truth, generated_answer, img_width=None, img_height=None, parse_fn=None):
         """
         Evaluate a single answer.
 
@@ -134,7 +150,10 @@ class RoboSpatialBench(ImageVQADataset):
         try:
             w = img_width if img_width is not None else 1
             h = img_height if img_height is not None else 1
-            pts = Point2DParser.parse(gen_answer_raw, int(w), int(h), output='norm')
+            if parse_fn is None:
+                pts = Point2DParser.parse(gen_answer_raw, int(w), int(h), output='norm01')
+            else:
+                pts = parse_fn(gen_answer_raw, int(w), int(h))
         except Exception as e:
             print(f'[WARN] failed to parse prediction: {generated_answer} ({e})')
             return False, is_binary, parsed_answer, is_parsable
@@ -188,8 +207,9 @@ class RoboSpatialBench(ImageVQADataset):
             with Image.open(img_path) as img:
                 img_w, img_h = img.size  # width, height
 
+            # use parse_prediction as the default point parser
             correct, is_binary, parsed_answer, is_parsable = RoboSpatialBench.evaluate_answer(
-                gt, pred, img_w, img_h
+                gt, pred, img_w, img_h, parse_fn=self.parse_prediction
             )
 
             if not is_parsable:

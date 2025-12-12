@@ -139,7 +139,7 @@ class RefSpatialBench(ImageVQADataset):
         Override this method if your model uses a different format.
         Always return pixel coordinates.
         """
-        Point2DParser.log_hint(task_name=self.dataset_name)
+        Point2DParser.log_hint(task_name=getattr(self, 'dataset_name', 'RefSpatial'))
         return Point2DParser.parse(pred_text, width, height, output='pixel')
 
     def evaluate(self, eval_file, **judge_kwargs):
