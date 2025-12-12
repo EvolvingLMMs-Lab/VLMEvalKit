@@ -272,7 +272,7 @@ class VsiBench(VideoBaseDataset):
 
         # 4. run scoring
         mcq_scored = score_fns['mcq'](mcq_data) if score_fns['mcq'] else mcq_data
-        na_scored  = score_fns['na'](na_data)  if score_fns['na']  else na_data
+        na_scored = score_fns['na'](na_data)  if score_fns['na']  else na_data
 
         summary = self._aggregate(mcq_scored, na_scored)
 

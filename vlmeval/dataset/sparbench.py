@@ -11,10 +11,10 @@ from .image_base import ImageBaseDataset
 from .utils.spatial_bench.cal_scores import (
     build_mcq_score_fn,
     build_na_score_fn,
-    get_judge_tag_from_score_fn,
     mean_relative_accuracy,
+    attach_score_cache,
 )
-from .utils.spatial_bench.tools.files import build_eval_paths
+from .utils.spatial_bench.tools.files import build_eval_paths, get_judge_tag_from_score_fn
 
 
 class SparBench(ImageBaseDataset):
@@ -191,7 +191,18 @@ class SparBench(ImageBaseDataset):
 
         result_file, xlsx_path, acc_tsv_path = build_eval_paths(eval_file, judge_tag)
 
-        # 3. run scoring
+        # 3. attach cache files for each sub-scorer
+        for sub_tag, fn in score_fns.items():
+            if fn is not None:
+                attach_score_cache(
+                    score_fn=fn,
+                    eval_file=eval_file,
+                    judge_tag=judge_tag,
+                    key_col='index',
+                    sub_tag=sub_tag,
+                )
+
+        # 4. run scoring
         mcq_scored = score_fns['mcq'](mcq_data) if score_fns['mcq'] else mcq_data
         na_scored = score_fns['na'](na_data) if score_fns['na'] else na_data
         sp_scored = (
