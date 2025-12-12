@@ -151,7 +151,7 @@ class RoboSpatialBench(ImageVQADataset):
             w = img_width if img_width is not None else 1
             h = img_height if img_height is not None else 1
             if parse_fn is None:
-                pts = Point2DParser.parse(gen_answer_raw, int(w), int(h), output='norm01')
+                pts = Point2DParser.parse(gen_answer_raw, int(w), int(h), output='norm')
             else:
                 pts = parse_fn(gen_answer_raw, int(w), int(h))
         except Exception as e:

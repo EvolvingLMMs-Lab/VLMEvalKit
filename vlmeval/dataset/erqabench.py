@@ -17,7 +17,7 @@ class ERQA(ImageVQADataset):
 
     def _task_category(self):
         return [
-            'Action Reasonin',
+            'Action Reasoning',
             'Multi-view Reasoning',
             'Pointing',
             'Spatial Reasoning',

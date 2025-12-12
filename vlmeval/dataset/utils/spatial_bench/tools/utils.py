@@ -366,7 +366,7 @@ class Point2DParser:
         if not isinstance(obj, list):
             return None
 
-        pts_norm = []  # 统一存成 0~1 坐标
+        pts_norm = []  # Store uniformly as 0~1 coordinates
         w = float(width) if width else 1.0
         h = float(height) if height else 1.0
 
@@ -470,7 +470,7 @@ class Point2DParser:
                     pts_norm.extend(zip(x_norm, y_norm))
 
         if not pts_norm:
-            return np.empty((0, 2), dtype=float if output == 'norm01' else int)
+            return np.empty((0, 2), dtype=float if output == 'norm' else int)
 
         pts_norm = np.array(pts_norm, dtype=float)
 

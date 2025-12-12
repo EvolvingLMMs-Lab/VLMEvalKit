@@ -182,6 +182,9 @@ class RefSpatialBench(ImageVQADataset):
             mask = (mask > 0).astype(np.uint8)
 
             acc = 0.0
+            is_parsable = False
+            num_points = 0
+
             try:
                 points = self.parse_prediction(pred_text, mask.shape[1], mask.shape[0])
                 is_parsable = True
@@ -234,9 +237,9 @@ class RefSpatialBench(ImageVQADataset):
         acc_df = pd.DataFrame([results])
         acc_df.to_csv(
             acc_tsv_path,
-            sep="\t",
+            sep='\t',
             index=False,
-            float_format="%.6f",
+            float_format='%.6f',
         )
 
         return results
