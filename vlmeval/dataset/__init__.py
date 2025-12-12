@@ -103,7 +103,7 @@ from .sparbench import SparBench
 from .spatialvizbench import SpatialVizBench
 from .starebench import StareBench
 from .omnispatialbench import OmniSpatialBench
-from .erqabench import ERQA
+from .erqabench import ERQABench
 from .robospatialbench import RoboSpatialBench
 from .refspatialbench import RefSpatialBench
 
@@ -246,7 +246,7 @@ IMAGE_DATASET = [
 # add by EASI team
 IMAGE_DATASET += [
     MindCubeBench, EmbSpatialBench, ViewSpatialBench, MMSIBench, SiteBenchImage,
-    SparBench, SpatialVizBench, StareBench, OmniSpatialBench, ERQA, RoboSpatialBench, RefSpatialBench
+    SparBench, SpatialVizBench, StareBench, OmniSpatialBench, ERQABench, RoboSpatialBench, RefSpatialBench
 ]
 
 VIDEO_DATASET = [

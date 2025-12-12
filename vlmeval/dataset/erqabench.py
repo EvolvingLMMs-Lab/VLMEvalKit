@@ -6,7 +6,7 @@ from ..smp.file import load
 from .image_vqa import ImageVQADataset
 
 
-class ERQA(ImageVQADataset):
+class ERQABench(ImageVQADataset):
 
     DATASET_URL = {
         'ERQA': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/ERQA.tsv',
