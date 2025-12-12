@@ -1,3 +1,8 @@
+"""
+This scirpt is modified from the official VLM-3R implementation (https://github.com/VITA-Group/VLM-3R),
+providing a unified Vision-Language Model (VLM) framework integrating 3D reconstructive instruction tuning
+for deep spatial understanding from monocular video.
+"""
 import logging
 from typing import Optional
 
