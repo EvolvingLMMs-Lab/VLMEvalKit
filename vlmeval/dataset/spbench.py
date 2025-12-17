@@ -42,10 +42,10 @@ class SPBench(ImageBaseDataset):
     }
 
     DATASET_URL = {
-        'SPBench-MV': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/SPBench-MV.tsv',
-        'SPBench-MV_CoT': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/SPBench-MV.tsv',
-        'SPBench-SI': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/SPBench-SI.tsv',
-        'SPBench-SI_CoT': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/SPBench-SI.tsv',
+        'SPBench-MV': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SPBench-MV.tsv',
+        'SPBench-MV_CoT': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SPBench-MV.tsv',  # noqa: E501
+        'SPBench-SI': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SPBench-SI.tsv',
+        'SPBench-SI_CoT': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/SPBench-SI.tsv',  # noqa: E501
     }
 
     DATASET_MD5 = {
