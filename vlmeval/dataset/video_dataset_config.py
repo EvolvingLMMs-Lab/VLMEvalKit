@@ -218,6 +218,14 @@ for variant in vsi_subsets:
         video_vsi_dataset[f"{variant}_{suffix}"] = partial(VsiBench, dataset=f'{variant}', **kwarg)
         kwarg.update({"suffix": suffix})
 
+vsisuper_recall_subsets = VsiSuperRecall.supported_datasets()
+vsisuper_recall_dataset = {}
+for variant in vsisuper_recall_subsets:
+    for kwarg in vsi_kwargs:
+        suffix = kwarg.pop("suffix")
+        vsisuper_recall_dataset[f"{variant}_{suffix}"] = partial(VsiSuperRecall, dataset=f'{variant}', **kwarg)
+        kwarg.update({"suffix": suffix})
+
 sitebenchvideo_dataset = {
     'SiteBenchVideo_64frame': partial(SiteBenchVideo, dataset='SiteBenchVideo', nframe=64),
     'SiteBenchVideo_32frame': partial(SiteBenchVideo, dataset='SiteBenchVideo', nframe=32),
@@ -233,7 +241,8 @@ dataset_groups = [
     cg_av_counting_dataset, video_mmlu_dataset, egoexobench_dataset, dream_1k_dataset, video_tt_dataset,
 ]
 
-dataset_groups += [video_vsi_dataset, sitebenchvideo_dataset]
+# add by EASI team
+dataset_groups += [video_vsi_dataset, sitebenchvideo_dataset, vsisuper_recall_dataset]
 
 for grp in dataset_groups:
     supported_video_datasets.update(grp)

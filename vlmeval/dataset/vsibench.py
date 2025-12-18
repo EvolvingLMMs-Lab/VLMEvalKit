@@ -5,6 +5,7 @@ import decord
 import json
 import math
 import numpy as np
+import fnmatch
 
 from ..smp import *
 from ..smp.file import load
@@ -393,3 +394,295 @@ class VsiBench(VideoBaseDataset):
         res['tabulated_keys'] = tab_keys
         res['tabulated_results'] = tab_vals
         return res
+
+
+class VsiSuperBase(VideoBaseDataset):
+    MD5 = ''
+    MODALITY = 'VIDEO'
+
+    LMUData_root = LMUDataRoot()
+
+    DATASET_URL = {
+        'VSI-Bench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/VSI-Bench.tsv',  # noqa: E501
+        'VSI-Bench-Debiased': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/VSI-Bench-Debiased.tsv',  # noqa: E501
+    }
+    DATASET_MD5 = {
+        'VSI-Bench': '34544fd83241391d83eff087a1be7d83',
+        'VSI-Bench-Debiased': '2a075fbc69a7725fe7f0718eafb7fca5',
+    }
+
+    def __init__(self, dataset, pack=False, nframe=0, fps=-1):
+        super().__init__(dataset=dataset, pack=pack, nframe=nframe, fps=fps)
+
+    def download_vsisuper(self, repo_id, allow_patterns):
+        cache_path = get_cache_path(repo_id)
+
+        repo_name = repo_id.split('/')[1]
+        duration = allow_patterns[0].split('m')[0]
+        SENTINEL_NAME = f'.{repo_name}_{duration}_extracted'
+
+        if (cache_path and os.path.isdir(cache_path)
+                and os.path.isfile(os.path.join(cache_path, SENTINEL_NAME))):
+            dataset_path = cache_path
+        else:
+            def _write_sentinel(sentinel_path, text='ok'):
+                tmp = sentinel_path + '.tmp'
+                with open(tmp, 'w', encoding='utf-8') as f:
+                    f.write(text)
+                os.replace(tmp, sentinel_path)
+
+            def unzip_hf_zip(pth, only_zips=None):
+                import zipfile
+
+                base_dir = pth
+                all_zips = [
+                    f for f in os.listdir(base_dir)
+                    if f.endswith('.zip')
+                ]
+
+                # 如果指定了 only_zips，就做一层过滤
+                if only_zips:
+                    # 支持精确文件名或通配符，比如 '30mins.zip' / '*30mins*.zip'
+                    filtered = []
+                    for f in all_zips:
+                        if any(fnmatch.fnmatch(f, pattern) for pattern in only_zips):
+                            filtered.append(f)
+                    zip_files = [os.path.join(base_dir, f) for f in filtered]
+                else:
+                    zip_files = [os.path.join(base_dir, f) for f in all_zips]
+
+                zip_files.sort()
+
+                for zip_file in tqdm(zip_files, desc=f'Unpacking Origin Data {only_zips}...'):
+                    with zipfile.ZipFile(zip_file, 'r') as zf:
+                        for info in zf.infolist():
+                            if info.is_dir():
+                                continue
+
+                            rel = os.path.normpath(info.filename).lstrip('/\\')
+                            dst = os.path.join(pth, rel)
+
+                            absp = os.path.abspath(pth)
+                            absd = os.path.abspath(dst)
+                            if not absd.startswith(absp + os.sep):
+                                raise RuntimeError(f'Unsafe path in zip: {info.filename}')
+
+                            os.makedirs(os.path.dirname(dst), exist_ok=True)
+                            with zf.open(info, 'r') as src, open(dst, 'wb') as out:
+                                out.write(src.read())
+
+                sentinel_path = os.path.join(pth, SENTINEL_NAME)
+                _write_sentinel(sentinel_path, text='done')
+                print(f'{repo_name} {duration}mins data extracted to current directory with original layout.')
+
+            dataset_path = snapshot_download(
+                repo_id=repo_id,
+                repo_type='dataset',
+                revision='main',
+                allow_patterns=allow_patterns,
+            )
+
+            unzip_hf_zip(dataset_path, only_zips=allow_patterns)
+
+        return dataset_path
+
+    def save_video_frames(self, video_path, video_llm=False):
+        vid_path = osp.join(self.data_root, video_path)
+
+        vid = decord.VideoReader(vid_path)
+        video_nframes = len(vid)
+        video_fps = vid.get_avg_fps()
+        video_info = {
+            'fps': video_fps,
+            'n_frames': video_nframes,
+        }
+
+        indices = []
+
+        if self.nframe > 0 and self.fps < 0:
+
+            indices = np.linspace(0, video_nframes - 1, self.nframe, dtype=int).tolist()
+            frame_paths = self.frame_paths(video_path)
+
+        elif self.fps > 0:
+            total_duration = video_nframes / video_fps
+            required_frames = int(total_duration * self.fps)
+            step_size = video_fps / self.fps
+            indices = [int(i * step_size) for i in range(required_frames)]
+
+            frame_paths = self.frame_paths_fps(video_path, len(indices))
+
+        flag = np.all([osp.exists(p) for p in frame_paths])
+
+        if not flag:
+            images = [vid[i].asnumpy() for i in indices]
+            images = [Image.fromarray(arr) for arr in images]
+            for im, pth in zip(images, frame_paths):
+                if not osp.exists(pth) and not video_llm:
+                    im.save(pth)
+
+        return frame_paths, indices, video_info
+
+class VsiSuperRecall(VsiSuperBase):
+    TYPE = 'MCQ'
+
+    # 统一维护所有时长
+    DURATIONS = ['10', '30', '60', '120', '240']
+
+    # 用推导式自动生成 URL / MD5
+    DATASET_URL = {
+        f'VsiSuperRecall_{d}mins':
+            os.path.join('/mnt/aigc/wangyubo/code/UG/vlmevalkit/zoe_eval/tools/bench/vsi_super/recall/tsv', f'VsiSuperRecall_{d}min.tsv')
+        for d in DURATIONS
+    }
+
+    DATASET_MD5 = {
+        name: None for name in DATASET_URL.keys()
+    }
+
+    def __init__(self, dataset, pack=False, nframe=0, fps=-1):
+        super().__init__(dataset=dataset, pack=pack, nframe=nframe, fps=fps)
+        self.duration = self.dataset_name.split('_')[1]
+
+    @classmethod
+    def supported_datasets(cls):
+        video_duration = ['10', '30', '60', '120', '240']
+        subsets = [f"VsiSuperRecall_{num}mins" for num in video_duration]
+
+        return subsets
+
+    def prepare_dataset(self, dataset_name):
+        url = self.DATASET_URL[dataset_name]
+        md5 = self.DATASET_MD5[dataset_name]
+
+        _ = super().prepare_tsv(url, md5)
+
+        data_duration = dataset_name.split('_')[1]
+
+        dataset_path = self.download_vsisuper(
+            repo_id='nyu-visionx/VSI-SUPER-Recall',
+            allow_patterns=[f'{data_duration}.zip']
+        )
+        self.dataset_path = dataset_path
+
+        variant_data_file = os.path.join(self.LMUData_root, f'{dataset_name}.tsv')
+
+        return dict(data_file=variant_data_file, root=dataset_path)
+
+    def build_prompt(self, line, video_llm):
+        if isinstance(line, int):
+            assert line < len(self)
+            line = self.data.iloc[line]
+
+        question = line['question'].strip()
+        options = ast.literal_eval(line['options'])
+        formatted_options = '\n'.join(options)
+
+        # following VSI-SUPER-Recall prompt format for code base:
+        # https://github.com/cambrian-mllm/cambrian-s/blob/main/lmms-eval/lmms_eval/tasks/cambrians_vsr/utils.py
+        post_prompt = "\nAnswer with the option's letter from the given choices directly."
+        prompt = question + '\nOptions:\n' + formatted_options + post_prompt
+
+        message = []
+
+        if video_llm:
+            message.append(dict(type='video', value=osp.join(self.data_root, line['video'])))
+        else:
+            frames, _, _ = self.save_video_frames(line['video'], video_llm)
+            for im in frames:
+                message.append(dict(type='image', value=im))
+
+        message.append(dict(type='text', value=prompt))
+
+        return message
+
+    def evaluate(self, eval_file, **judge_kwargs):
+        from .utils.spatial_bench.cal_scores import eval_mcq_score, build_mcq_score_fn
+
+        # Select MCQ scoring function (rule-based or LLM-based) according to judge_kwargs['model'].
+        score_fn = build_mcq_score_fn(**judge_kwargs)
+
+        return eval_mcq_score(
+            load_fn=load,
+            eval_file=eval_file,
+            score_fn=score_fn,
+            group_col='question_type',
+            order=None,
+            dataset_name=getattr(self, 'dataset_name', f'VsiSuperRecall_{self.duration}')
+        )
+
+
+class VsiSuperCount(VsiSuperBase):
+    TYPE = 'VQA'
+
+    # 统一维护所有时长
+    DURATIONS = ['10', '30', '60', '120']
+
+    # 用推导式自动生成 URL / MD5
+    DATASET_URL = {
+        f'VsiSuperRecall_{d}mins':
+            os.path.join('/mnt/aigc/wangyubo/code/UG/vlmevalkit/zoe_eval/tools/bench/vsi_super/recall/tsv', f'VsiSuperRecall_{d}min.tsv')
+        for d in DURATIONS
+    }
+
+    DATASET_MD5 = {
+        name: None for name in DATASET_URL.keys()
+    }
+
+    def __init__(self, dataset, pack=False, nframe=0, fps=-1):
+        super().__init__(dataset=dataset, pack=pack, nframe=nframe, fps=fps)
+        self.duration = self.dataset_name.split('_')[1]
+
+    @classmethod
+    def supported_datasets(cls):
+        video_duration = ['10', '30', '60', '120']
+        subsets = [f"VsiSuperCount_{num}mins" for num in video_duration]
+
+        return subsets
+
+    def prepare_dataset(self, dataset_name):
+        url = self.DATASET_URL[dataset_name]
+        md5 = self.DATASET_MD5[dataset_name]
+
+        _ = super().prepare_tsv(url, md5)
+
+        data_duration = dataset_name.split('_')[1]
+
+        dataset_path = self.download_vsisuper(
+            repo_id='nyu-visionx/VSI-SUPER-Count',
+            allow_patterns=[f'{data_duration}*.zip']
+        )
+        self.dataset_path = dataset_path
+
+        variant_data_file = os.path.join(self.LMUData_root, f'{dataset_name}.tsv')
+
+        return dict(data_file=variant_data_file, root=dataset_path)
+
+    def build_prompt(self, line, video_llm):
+        if isinstance(line, int):
+            assert line < len(self)
+            line = self.data.iloc[line]
+
+        question = line['question'].strip()
+
+        # following VSI-SUPER-Count prompt format for code base:
+        # https://github.com/cambrian-mllm/cambrian-s/blob/main/lmms-eval/lmms_eval/tasks/cambrians_vsc/utils.py
+        pre_prompt = 'These are frames of a video.\n'
+        post_prompt = "\nAnswer with the option's letter from the given choices directly."
+        prompt = pre_prompt + question + post_prompt
+
+        message = []
+
+        if video_llm:
+            message.append(dict(type='video', value=osp.join(self.data_root, line['video'])))
+        else:
+            frames, _, _ = self.save_video_frames(line['video'], video_llm)
+            for im in frames:
+                message.append(dict(type='image', value=im))
+
+        message.append(dict(type='text', value=prompt))
+
+        return message
+
+    def evaluate(self, eval_file, **judge_kwargs):
+        pass
