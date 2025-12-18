@@ -358,12 +358,12 @@ class MMSIVideoBench(VideoBaseDataset):
             try:
                 obj = ast.literal_eval(val.strip())
             except Exception as e:
-                raise ValueError(f"Failed to parse frames_list from string: {val[:200]}") from e
+                raise ValueError(f"Failed to parse image_path from string: {val[:200]}") from e
         else:
             obj = val
 
         if not isinstance(obj, list):
-            raise TypeError(f"frames_list must be list or str of list, got {type(obj)}")
+            raise TypeError(f"Image_path must be list or str of list, got {type(obj)}")
 
         # ensure 2D: if it's 1D, wrap it
         if len(obj) > 0 and not isinstance(obj[0], list):
@@ -392,7 +392,7 @@ class MMSIVideoBench(VideoBaseDataset):
                 result.append(part)
         return result
 
-    def build_prompt(self, line, video_llm):
+    def build_prompt(self, line, video_llm=None):
         """
         Build the textual prompt and visual inputs for MMSI-Video.
 
