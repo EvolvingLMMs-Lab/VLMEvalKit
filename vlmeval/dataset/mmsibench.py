@@ -274,8 +274,6 @@ class MMSIVideoBench(VideoBaseDataset):
 
     def save_video_frames(self, frames_list, video_fps=None):
         """
-        - frames_list: List[List[str]]
-
         Args:
             frames_list (List[List[str]]): Per-segment frame paths
             video_fps (float, optional): Original video fps (used only when self.fps > 0)
