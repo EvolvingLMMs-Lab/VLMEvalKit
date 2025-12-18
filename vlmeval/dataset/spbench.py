@@ -21,23 +21,21 @@ class SPBench(ImageBaseDataset):
     )
 
     PROMPT_TEMPLATES = {
-        "default":
-        {
-            "pre_prompt": "Question: {question}\n",
-            "mca_post_prompt": "Please answer with the option's letter from the given choices (e.g., A, B, etc.) directly.",  # noqa: E501
-            "na_post_prompt": "Please answer the question using a numerical value (e.g., 42 or 3.1) directly."
+        'default': {
+            'pre_prompt': 'Question: {question}\n',
+            'mca_post_prompt': "Please answer with the option's letter from the given choices (e.g., A, B, etc.) directly.",  # noqa: E501
+            'na_post_prompt': 'Please answer the question using a numerical value (e.g., 42 or 3.1) directly.',
         },
-        "thinking":
-        {
-            "pre_prompt": THINKING_TEMPLATE,
-            "mca_post_prompt": (
-                "Please provide your detailed reasoning between the <think> </think> tags, "
+        'thinking': {
+            'pre_prompt': THINKING_TEMPLATE,
+            'mca_post_prompt': (
+                'Please provide your detailed reasoning between the <think> </think> tags, '
                 "and then answer the question with the option's letter from the given choices (e.g., A, B, etc.) within the <answer> </answer> tags."  # noqa: E501
             ),
-            "na_post_prompt": (
-                "Please provide your detailed reasoning between the <think> </think> tags, "
-                "and then answer the question with a numerical value (e.g., 42 or 3.1) within the <answer> </answer> tags."  # noqa: E501
-            )
+            'na_post_prompt': (
+                'Please provide your detailed reasoning between the <think> </think> tags, '
+                'and then answer the question with a numerical value (e.g., 42 or 3.1) within the <answer> </answer> tags.'  # noqa: E501
+            ),
         },
     }
 
@@ -72,15 +70,14 @@ class SPBench(ImageBaseDataset):
 
     def get_task_type(self, question_type):
         mcq_items = [
-            "object_rel_direction",
-            "object_rel_distance"
+            'object_rel_direction',
+            'object_rel_distance'
         ]
 
         na_items = [
-            "object_counting",
-            "object_size_estimation",
-            "object_abs_distance",
-            "object_size_estimation"
+            'object_counting',
+            'object_abs_distance',
+            'object_size_estimation'
         ]
 
         if question_type in mcq_items:
@@ -90,7 +87,7 @@ class SPBench(ImageBaseDataset):
         else:
             raise ValueError(f'Unknown question type: {question_type}')
 
-    def download_sitebench(self, repo_id='hongxingli/SPBench'):
+    def download_spbench(self, repo_id='hongxingli/SPBench'):
         cache_path = get_cache_path(repo_id)
         SENTINEL_NAME = '.spbench_extracted'
 
@@ -120,7 +117,7 @@ class SPBench(ImageBaseDataset):
                             if info.is_dir():
                                 continue
 
-                            rel = os.path.normpath(info.filename).lstrip('/\\')
+                            rel = os.path.normpath(info.filename).lstrip('/\\\\')
                             dst = os.path.join(pth, rel)
 
                             absp = os.path.abspath(pth)
@@ -149,7 +146,7 @@ class SPBench(ImageBaseDataset):
     def prepare_tsv(self, url, file_md5=None):
         data = super().prepare_tsv(url, file_md5)
 
-        dataset_path = self.download_sitebench()
+        dataset_path = self.download_spbench()
 
         # === Transfer rel path to abs path ===
         if 'image_path' in data.columns:
@@ -161,7 +158,7 @@ class SPBench(ImageBaseDataset):
 
                 if not dataset_path:
                     return os.path.normpath(s)
-                return os.path.normpath(os.path.join(dataset_path, s.lstrip(r'\/')))
+                return os.path.normpath(os.path.join(dataset_path, s.lstrip(r'\\/')))
 
             def to_abs(p):
                 if isinstance(p, list):
@@ -199,7 +196,7 @@ class SPBench(ImageBaseDataset):
             options = [options]
 
         if options:
-            question += "\nOptions:\n" + "\n".join(options)
+            question += '\nOptions:\n' + '\n'.join(options)
 
         question_type = line['question_type']
         task_type = self.get_task_type(question_type)
@@ -208,11 +205,11 @@ class SPBench(ImageBaseDataset):
         prompt_type = 'thinking' if self.use_cot else 'default'
         prompt_template = self.PROMPT_TEMPLATES.get(prompt_type)
 
-        prompt_text = prompt_template["pre_prompt"].format(question=question)
+        prompt_text = prompt_template['pre_prompt'].format(question=question)
         if task_type == 'MCQ':
-            prompt_text += "\n" + prompt_template['mca_post_prompt']
+            prompt_text += '\n' + prompt_template['mca_post_prompt']
         elif task_type == 'NA':
-            prompt_text += "\n" + prompt_template["na_post_prompt"]
+            prompt_text += '\n' + prompt_template['na_post_prompt']
 
         msgs = []
         if isinstance(tgt_path, list):
