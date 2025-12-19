@@ -120,11 +120,11 @@ class MMSIVideoBench(VideoBaseDataset):
     }
 
     _CATEGORY_TASK_ORDER = None
+    LMUData_root = LMUDataRoot()
 
     def __init__(self, dataset, pack=False, nframe=0, fps=-1):
         super().__init__(dataset=dataset, pack=pack, nframe=nframe, fps=fps)
         self.repo_id = 'rbler/MMSI-Video-Bench'
-        self.LMUData_root = LMUDataRoot()
 
     @classmethod
     def supported_datasets(cls):
