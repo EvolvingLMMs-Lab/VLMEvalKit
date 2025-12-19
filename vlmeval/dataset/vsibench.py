@@ -13,9 +13,8 @@ from tqdm import tqdm
 from collections import OrderedDict
 from huggingface_hub import snapshot_download
 
-# from ..smp import *
-from ..smp.misc import toliststr, get_cache_path, modelscope_flag_set
-from ..smp.file import LMUDataRoot, dump, load
+from ..smp.misc import get_cache_path, modelscope_flag_set
+from ..smp.file import LMUDataRoot, load
 from .video_base import VideoBaseDataset
 
 
@@ -516,8 +515,8 @@ class VsiSuperBase(VideoBaseDataset):
 
         else:
             raise ValueError(
-                f"save_video_frames: invalid configuration: nframe={self.nframe}, fps={self.fps}. "
-                "At least one of nframe>0 or fps>0 is required to determine frame sampling."
+                f'save_video_frames: invalid configuration: nframe={self.nframe}, fps={self.fps}.'
+                ' At least one of nframe>0 or fps>0 is required to determine frame sampling.'
             )
 
         flag = np.all([os.path.exists(p) for p in frame_paths])
