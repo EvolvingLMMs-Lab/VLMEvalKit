@@ -236,6 +236,15 @@ sitebenchvideo_dataset = {
     'SiteBenchVideo_1fps': partial(SiteBenchVideo, dataset='SiteBenchVideo', fps=1),
 }
 
+mmsi_video_dataset = {
+    # The 300 frame setting is aligned with Sufficient-Coverage policy proposed in MMSI-Video-Bench paper
+    'MMSIVideoBench_300frame': partial(MMSIVideoBench, dataset='MMSIVideoBench', nframe=300),
+    'MMSIVideoBench_64frame': partial(MMSIVideoBench, dataset='MMSIVideoBench', nframe=64),
+    'MMSIVideoBench_50frame': partial(MMSIVideoBench, dataset='MMSIVideoBench', nframe=50),
+    'MMSIVideoBench_32frame': partial(MMSIVideoBench, dataset='MMSIVideoBench', nframe=32),
+    'MMSIVideoBench_1fps': partial(MMSIVideoBench, dataset='MMSIVideoBench', fps=1),
+}
+
 supported_video_datasets = {}
 
 dataset_groups = [
@@ -246,7 +255,9 @@ dataset_groups = [
 ]
 
 # add by EASI team
-dataset_groups += [video_vsi_dataset, sitebenchvideo_dataset, vsisuper_recall_dataset, vsisuper_count_dataset]
+dataset_groups += [
+    video_vsi_dataset, sitebenchvideo_dataset, mmsi_video_dataset, vsisuper_recall_dataset, vsisuper_count_dataset
+]
 
 for grp in dataset_groups:
     supported_video_datasets.update(grp)
