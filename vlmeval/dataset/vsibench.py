@@ -1,19 +1,22 @@
-# flake8: noqa
 import re
+import os
 import ast
-import os.path as osp
 import decord
-import json
-import math
-import numpy as np
+import pickle
 import fnmatch
+import warnings
+import numpy as np
+import pandas as pd
 
-from ..smp import *
-from ..smp.file import load
-from .video_base import VideoBaseDataset
-
-from huggingface_hub import snapshot_download
+from PIL import Image
+from tqdm import tqdm
 from collections import OrderedDict
+from huggingface_hub import snapshot_download
+
+# from ..smp import *
+from ..smp.misc import toliststr, get_cache_path, modelscope_flag_set
+from ..smp.file import LMUDataRoot, dump, load
+from .video_base import VideoBaseDataset
 
 
 class VsiBench(VideoBaseDataset):
@@ -144,7 +147,7 @@ class VsiBench(VideoBaseDataset):
         return dict(data_file=variant_data_file, root=dataset_path)
 
     def save_video_frames(self, video_path, video_llm=False):
-        vid_path = osp.join(self.data_root, 'video', video_path)
+        vid_path = os.path.join(self.data_root, 'video', video_path)
 
         vid = decord.VideoReader(vid_path)
         video_nframes = len(vid)
@@ -185,13 +188,13 @@ class VsiBench(VideoBaseDataset):
 
             frame_paths = self.frame_paths_fps(video_path, len(indices))
 
-        flag = np.all([osp.exists(p) for p in frame_paths])
+        flag = np.all([os.path.exists(p) for p in frame_paths])
 
         if not flag:
             images = [vid[i].asnumpy() for i in indices]
             images = [Image.fromarray(arr) for arr in images]
             for im, pth in zip(images, frame_paths):
-                if not osp.exists(pth) and not video_llm:
+                if not os.path.exists(pth) and not video_llm:
                     im.save(pth)
 
         return frame_paths, indices, video_info
@@ -220,7 +223,7 @@ class VsiBench(VideoBaseDataset):
         message = []
 
         if video_llm:
-            message.append(dict(type='video', value=osp.join(self.data_root, 'video', line['video'])))
+            message.append(dict(type='video', value=os.path.join(self.data_root, 'video', line['video'])))
         else:
             frames, _, _ = self.save_video_frames(line['video'], video_llm)
             for im in frames:
@@ -274,7 +277,7 @@ class VsiBench(VideoBaseDataset):
 
         # 4. run scoring
         mcq_scored = score_fns['mcq'](mcq_data) if score_fns['mcq'] else mcq_data
-        na_scored = score_fns['na'](na_data)  if score_fns['na']  else na_data
+        na_scored = score_fns['na'](na_data) if score_fns['na'] else na_data
 
         summary = self._aggregate(mcq_scored, na_scored)
 
@@ -284,7 +287,6 @@ class VsiBench(VideoBaseDataset):
                 'na_scored': na_scored,
                 'summary': summary,
             }
-            import pickle
             with open(result_file, 'wb') as f:
                 pickle.dump(to_dump, f)
             print(f'[save] result saved to {result_file}')
@@ -487,7 +489,7 @@ class VsiSuperBase(VideoBaseDataset):
         return dataset_path
 
     def save_video_frames(self, video_path, video_llm=False):
-        vid_path = osp.join(self.data_root, video_path)
+        vid_path = os.path.join(self.data_root, video_path)
 
         vid = decord.VideoReader(vid_path)
         video_nframes = len(vid)
@@ -518,13 +520,13 @@ class VsiSuperBase(VideoBaseDataset):
                 "At least one of nframe>0 or fps>0 is required to determine frame sampling."
             )
 
-        flag = np.all([osp.exists(p) for p in frame_paths])
+        flag = np.all([os.path.exists(p) for p in frame_paths])
 
         if not flag:
             images = [vid[i].asnumpy() for i in indices]
             images = [Image.fromarray(arr) for arr in images]
             for im, pth in zip(images, frame_paths):
-                if not osp.exists(pth) and not video_llm:
+                if not os.path.exists(pth) and not video_llm:
                     im.save(pth)
 
         return frame_paths, indices, video_info
@@ -597,7 +599,7 @@ class VsiSuperRecall(VsiSuperBase):
         message = []
 
         if video_llm:
-            message.append(dict(type='video', value=osp.join(self.data_root, line['video'])))
+            message.append(dict(type='video', value=os.path.join(self.data_root, line['video'])))
         else:
             frames, _, _ = self.save_video_frames(line['video'], video_llm)
             for im in frames:
@@ -705,7 +707,7 @@ class VsiSuperCount(VsiSuperBase):
         message = []
 
         if video_llm:
-            message.append(dict(type='video', value=osp.join(self.data_root, line['video'])))
+            message.append(dict(type='video', value=os.path.join(self.data_root, line['video'])))
         else:
             frames, _, _ = self.save_video_frames(line['video'], video_llm)
             for im in frames:
