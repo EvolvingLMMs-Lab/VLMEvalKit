@@ -1,4 +1,5 @@
 # flake8: noqa
+import re
 import ast
 import os.path as osp
 import decord
@@ -409,7 +410,17 @@ class VsiSuperBase(VideoBaseDataset):
         cache_path = get_cache_path(repo_id)
 
         repo_name = repo_id.split('/')[1]
-        duration = allow_patterns[0].split('m')[0]
+
+        # Extract duration from allow_patterns
+        pattern = allow_patterns[0]
+        basename = os.path.basename(pattern)
+        m = re.search(r'(\d+)\s*mins?', basename)
+        if not m:
+            raise ValueError(
+                f"Cannot parse duration from allow_patterns[0]={pattern!r}; "
+            )
+        duration = m.group(1)
+
         SENTINEL_NAME = f'.{repo_name}_{duration}_extracted'
 
         if (cache_path and os.path.isdir(cache_path)
@@ -500,6 +511,12 @@ class VsiSuperBase(VideoBaseDataset):
             indices = [int(i * step_size) for i in range(required_frames)]
 
             frame_paths = self.frame_paths_fps(video_path, len(indices))
+
+        else:
+            raise ValueError(
+                f"save_video_frames: invalid configuration: nframe={self.nframe}, fps={self.fps}. "
+                "At least one of nframe>0 or fps>0 is required to determine frame sampling."
+            )
 
         flag = np.all([osp.exists(p) for p in frame_paths])
 
