@@ -200,31 +200,35 @@ dream_1k_dataset = {
     'DREAM-1K_0.5fps': partial(DREAM, dataset='DREAM-1K', fps=0.5),
 }
 
-video_vsi_dataset = {}
-
-vsi_subsets = VsiBench.supported_datasets()
-vsi_kwargs = [
-    {"nframe": 128, "suffix": "128frame"},
-    {"nframe": 64, "suffix": "64frame"},
-    {"nframe": 32, "suffix": "32frame"},
-    {"nframe": 16, "suffix": "16frame"},
-    {"fps": 2.0, "suffix": "2fps"},
-    {"fps": 1.0, "suffix": "1fps"},
+VSI_FRAME_VARIANTS = [
+    ("128frame", dict(nframe=128)),
+    ("64frame", dict(nframe=64)),
+    ("32frame", dict(nframe=32)),
+    ("16frame", dict(nframe=16)),
+    ("2fps", dict(fps=2.0)),
+    ("1fps", dict(fps=1.0)),
 ]
 
-for variant in vsi_subsets:
-    for kwarg in vsi_kwargs:
-        suffix = kwarg.pop("suffix")
-        video_vsi_dataset[f"{variant}_{suffix}"] = partial(VsiBench, dataset=f'{variant}', **kwarg)
-        kwarg.update({"suffix": suffix})
 
+def _build_video_variants(subsets, cls):
+    out = {}
+    for variant in subsets:
+        for suffix, params in VSI_FRAME_VARIANTS:
+            out[f"{variant}_{suffix}"] = partial(cls, dataset=variant, **params)
+    return out
+
+
+# === VSI-Bench ===
+vsi_subsets = VsiBench.supported_datasets()
+video_vsi_dataset = _build_video_variants(vsi_subsets, VsiBench)
+
+# === VSI-SUPER-Recall ===
 vsisuper_recall_subsets = VsiSuperRecall.supported_datasets()
-vsisuper_recall_dataset = {}
-for variant in vsisuper_recall_subsets:
-    for kwarg in vsi_kwargs:
-        suffix = kwarg.pop("suffix")
-        vsisuper_recall_dataset[f"{variant}_{suffix}"] = partial(VsiSuperRecall, dataset=f'{variant}', **kwarg)
-        kwarg.update({"suffix": suffix})
+vsisuper_recall_dataset = _build_video_variants(vsisuper_recall_subsets, VsiSuperRecall)
+
+# === VSI-SUPER-Count ===
+vsisuper_count_subsets = VsiSuperCount.supported_datasets()
+vsisuper_count_dataset = _build_video_variants(vsisuper_count_subsets, VsiSuperCount)
 
 sitebenchvideo_dataset = {
     'SiteBenchVideo_64frame': partial(SiteBenchVideo, dataset='SiteBenchVideo', nframe=64),
@@ -242,7 +246,7 @@ dataset_groups = [
 ]
 
 # add by EASI team
-dataset_groups += [video_vsi_dataset, sitebenchvideo_dataset, vsisuper_recall_dataset]
+dataset_groups += [video_vsi_dataset, sitebenchvideo_dataset, vsisuper_recall_dataset, vsisuper_count_dataset]
 
 for grp in dataset_groups:
     supported_video_datasets.update(grp)

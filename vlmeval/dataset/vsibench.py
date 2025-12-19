@@ -402,15 +402,6 @@ class VsiSuperBase(VideoBaseDataset):
 
     LMUData_root = LMUDataRoot()
 
-    DATASET_URL = {
-        'VSI-Bench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/VSI-Bench.tsv',  # noqa: E501
-        'VSI-Bench-Debiased': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/VSI-Bench-Debiased.tsv',  # noqa: E501
-    }
-    DATASET_MD5 = {
-        'VSI-Bench': '34544fd83241391d83eff087a1be7d83',
-        'VSI-Bench-Debiased': '2a075fbc69a7725fe7f0718eafb7fca5',
-    }
-
     def __init__(self, dataset, pack=False, nframe=0, fps=-1):
         super().__init__(dataset=dataset, pack=pack, nframe=nframe, fps=fps)
 
@@ -440,9 +431,7 @@ class VsiSuperBase(VideoBaseDataset):
                     if f.endswith('.zip')
                 ]
 
-                # 如果指定了 only_zips，就做一层过滤
                 if only_zips:
-                    # 支持精确文件名或通配符，比如 '30mins.zip' / '*30mins*.zip'
                     filtered = []
                     for f in all_zips:
                         if any(fnmatch.fnmatch(f, pattern) for pattern in only_zips):
@@ -523,21 +512,26 @@ class VsiSuperBase(VideoBaseDataset):
 
         return frame_paths, indices, video_info
 
+
 class VsiSuperRecall(VsiSuperBase):
     TYPE = 'MCQ'
 
-    # 统一维护所有时长
-    DURATIONS = ['10', '30', '60', '120', '240']
+    HF_ROOT_PATH = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main'
 
-    # 用推导式自动生成 URL / MD5
     DATASET_URL = {
-        f'VsiSuperRecall_{d}mins':
-            os.path.join('/mnt/aigc/wangyubo/code/UG/vlmevalkit/zoe_eval/tools/bench/vsi_super/recall/tsv', f'VsiSuperRecall_{d}min.tsv')
-        for d in DURATIONS
+        'VsiSuperRecall_10mins': f'{HF_ROOT_PATH}/VsiSuperRecall_10mins.tsv',
+        'VsiSuperRecall_30mins': f'{HF_ROOT_PATH}/VsiSuperRecall_30mins.tsv',
+        'VsiSuperRecall_60mins': f'{HF_ROOT_PATH}/VsiSuperRecall_60mins.tsv',
+        'VsiSuperRecall_120mins': f'{HF_ROOT_PATH}/VsiSuperRecall_120mins.tsv',
+        'VsiSuperRecall_240mins': f'{HF_ROOT_PATH}/VsiSuperRecall_240mins.tsv'
     }
 
     DATASET_MD5 = {
-        name: None for name in DATASET_URL.keys()
+        'VsiSuperRecall_10mins': 'bc914f85b41de2b4403e7172cf1d82e3',
+        'VsiSuperRecall_30mins': '6f1581e2a8001efcd5ca060b6b8ac688',
+        'VsiSuperRecall_60mins': '9db60ec28f5165f53812d4c579361a22',
+        'VsiSuperRecall_120mins': '7f7448a69e45c473572fd1a44bc0619c',
+        'VsiSuperRecall_240mins': '997889ecaf75f2765163f0fdde0cbce4'
     }
 
     def __init__(self, dataset, pack=False, nframe=0, fps=-1):
@@ -565,9 +559,9 @@ class VsiSuperRecall(VsiSuperBase):
         )
         self.dataset_path = dataset_path
 
-        variant_data_file = os.path.join(self.LMUData_root, f'{dataset_name}.tsv')
+        data_file = os.path.join(self.LMUData_root, f'{dataset_name}.tsv')
 
-        return dict(data_file=variant_data_file, root=dataset_path)
+        return dict(data_file=data_file, root=dataset_path)
 
     def build_prompt(self, line, video_llm):
         if isinstance(line, int):
@@ -578,7 +572,7 @@ class VsiSuperRecall(VsiSuperBase):
         options = ast.literal_eval(line['options'])
         formatted_options = '\n'.join(options)
 
-        # following VSI-SUPER-Recall prompt format for code base:
+        # following VSI-SUPER-Recall prompt format from offical code base:
         # https://github.com/cambrian-mllm/cambrian-s/blob/main/lmms-eval/lmms_eval/tasks/cambrians_vsr/utils.py
         post_prompt = "\nAnswer with the option's letter from the given choices directly."
         prompt = question + '\nOptions:\n' + formatted_options + post_prompt
@@ -615,18 +609,20 @@ class VsiSuperRecall(VsiSuperBase):
 class VsiSuperCount(VsiSuperBase):
     TYPE = 'VQA'
 
-    # 统一维护所有时长
-    DURATIONS = ['10', '30', '60', '120']
+    HF_ROOT_PATH = 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main'
 
-    # 用推导式自动生成 URL / MD5
     DATASET_URL = {
-        f'VsiSuperRecall_{d}mins':
-            os.path.join('/mnt/aigc/wangyubo/code/UG/vlmevalkit/zoe_eval/tools/bench/vsi_super/recall/tsv', f'VsiSuperRecall_{d}min.tsv')
-        for d in DURATIONS
+        'VsiSuperCount_10mins': f'{HF_ROOT_PATH}/VsiSuperCount_10mins.tsv',
+        'VsiSuperCount_30mins': f'{HF_ROOT_PATH}/VsiSuperCount_30mins.tsv',
+        'VsiSuperCount_60mins': f'{HF_ROOT_PATH}/VsiSuperCount_60mins.tsv',
+        'VsiSuperCount_120mins': f'{HF_ROOT_PATH}/VsiSuperCount_120mins.tsv',
     }
 
     DATASET_MD5 = {
-        name: None for name in DATASET_URL.keys()
+        'VsiSuperCount_10mins': '927ff0191d500561773b557bd2537d83',
+        'VsiSuperCount_30mins': '5fa3af61ff0480b237d51c82bab5bee8',
+        'VsiSuperCount_60mins': '7736e9a6130bd4f24e8255397e1395d0',
+        'VsiSuperCount_120mins': '64302b2d1478153f362103e18fb71608',
     }
 
     def __init__(self, dataset, pack=False, nframe=0, fps=-1):
@@ -644,7 +640,7 @@ class VsiSuperCount(VsiSuperBase):
         url = self.DATASET_URL[dataset_name]
         md5 = self.DATASET_MD5[dataset_name]
 
-        _ = super().prepare_tsv(url, md5)
+        data = super().prepare_tsv(url, md5)
 
         data_duration = dataset_name.split('_')[1]
 
@@ -654,9 +650,27 @@ class VsiSuperCount(VsiSuperBase):
         )
         self.dataset_path = dataset_path
 
-        variant_data_file = os.path.join(self.LMUData_root, f'{dataset_name}.tsv')
+        # NOTE: We intentionally drop all `*_streaming` samples here.
+        # VSI-SUPER-Count streaming evaluation requires model-side changes
+        # (e.g., episodic / streaming decoding, handling `query_times`, and
+        # custom KV-cache scheduling). This cannot be implemented purely at
+        # the benchmark/dataset level and would require modifying each
+        # model’s inference / generate() logic, which is beyond the intended
+        # design scope of VLMEvalKit. Therefore, this dataset class only
+        # supports the non-streaming setting and filters out streaming rows.
+        # We still keep the original TSV (with streaming + non-streaming)
+        # in the repo for possible future streaming evaluation.
+        if 'question_type' in data.columns:
+            mask = ~data['question_type'].astype(str).str.contains('_streaming', na=False)
+            data = data[mask]
 
-        return dict(data_file=variant_data_file, root=dataset_path)
+            data_file = os.path.join(self.LMUData_root, f'{dataset_name}_wo_streaming.tsv')
+            os.makedirs(os.path.dirname(data_file), exist_ok=True)
+            data.to_csv(data_file, sep='\t', index=False)
+        else:
+            data_file = os.path.join(self.LMUData_root, f'{dataset_name}.tsv')
+
+        return dict(data_file=data_file, root=dataset_path)
 
     def build_prompt(self, line, video_llm):
         if isinstance(line, int):
@@ -665,10 +679,10 @@ class VsiSuperCount(VsiSuperBase):
 
         question = line['question'].strip()
 
-        # following VSI-SUPER-Count prompt format for code base:
+        # following VSI-SUPER-Count prompt format from offical code base:
         # https://github.com/cambrian-mllm/cambrian-s/blob/main/lmms-eval/lmms_eval/tasks/cambrians_vsc/utils.py
         pre_prompt = 'These are frames of a video.\n'
-        post_prompt = "\nAnswer with the option's letter from the given choices directly."
+        post_prompt = "\nPlease answer the question using a single word or phrase."
         prompt = pre_prompt + question + post_prompt
 
         message = []
@@ -685,4 +699,115 @@ class VsiSuperCount(VsiSuperBase):
         return message
 
     def evaluate(self, eval_file, **judge_kwargs):
-        pass
+        from .utils.spatial_bench.cal_scores import (
+            build_na_score_fn, attach_score_cache
+        )
+        from .utils.spatial_bench.tools.files import (
+            build_eval_paths, get_judge_tag_from_score_fn
+        )
+
+        data = load(eval_file)
+        data = data.sort_values(by='index')
+        data['prediction'] = [str(x) for x in data['prediction']]
+
+        # 1. build score_fn
+        score_fn = build_na_score_fn(**judge_kwargs)
+
+        # 2. build judge_tag
+        judge_tag = (
+            get_judge_tag_from_score_fn(score_fn)
+            if score_fn is not None
+            else 'extract_matching'
+        )
+        result_file, xlsx_path, acc_tsv_path = build_eval_paths(eval_file, judge_tag)
+
+        # 3. attach cache files
+        attach_score_cache(
+            score_fn=score_fn,
+            eval_file=eval_file,
+            judge_tag=judge_tag,
+            key_col='index',
+            sub_tag='na',
+        )
+
+        # 4. run scoring
+        na_scored = score_fn(data) if score_fn is not None else data
+        summary = self._aggregate(na_scored)
+
+        try:
+            to_dump = {
+                'na_scored': na_scored,
+                'summary': summary,
+            }
+            with open(result_file, 'wb') as f:
+                pickle.dump(to_dump, f)
+            print(f'[save] result saved to {result_file}')
+        except Exception as e:
+            warnings.warn(f'[save] failed to save result to {result_file}: {e}')
+
+        try:
+            merged = na_scored.copy()
+
+            prefer_front = [
+                'index', 'question_type',
+                'prediction', 'pred_extracted', 'answer',
+                'MRA:.5:.95:.05',
+            ]
+            ordered = [c for c in prefer_front if c in merged.columns] + \
+                      [c for c in merged.columns if c not in prefer_front]
+            merged = merged[ordered]
+
+            with pd.ExcelWriter(xlsx_path, engine='openpyxl') as writer:
+                merged.to_excel(writer, sheet_name='ALL', index=False)
+
+            print(f'[save] extract & matching (merged) saved to {xlsx_path}')
+        except Exception as e:
+            warnings.warn(f'[save] failed to save merged extract xlsx to {xlsx_path}: {e}')
+
+        try:
+            acc_df = pd.DataFrame(
+                [(k, v) for k, v in summary.items()
+                 if k not in ('tabulated_keys', 'tabulated_results')],
+                columns=['metric', 'value'],
+            )
+            acc_df.to_csv(acc_tsv_path, sep='\t', index=False)
+            print(f'[save] accuracy table saved to {acc_tsv_path}')
+        except Exception as e:
+            warnings.warn(f'[save] failed to save acc tsv to {acc_tsv_path}: {e}')
+
+        print(f'[{self.dataset_name}] summary: {summary}')
+        return summary
+
+    def _aggregate(self, na_df: pd.DataFrame) -> dict:
+        output = {}
+
+        if len(na_df):
+            for split_name, sub in na_df.groupby('question_type'):
+                output[f'{split_name}_MRA:.5:.95:.05'] = float(
+                    sub['MRA:.5:.95:.05'].mean()
+                )
+
+            output['overall'] = (
+                float(sum(output.values()) / len(output))
+                if output else 0.0
+            )
+        else:
+            output['overall'] = 0.0
+
+        res = OrderedDict()
+        res['overall'] = output['overall'] * 100.0
+
+        if len(na_df):
+            for split_name in sorted(na_df['question_type'].unique()):
+                key = f'{split_name}_MRA:.5:.95:.05'
+                if key in output:
+                    res[key] = output[key] * 100.0
+
+        tab_keys = ', '.join(list(res.keys()))
+        tab_vals = ', '.join([f'{v:.3f}' for v in res.values()])
+        print(f'Tabulated results: {tab_keys}')
+        print(f'Tabulated results: {tab_vals}')
+
+        res['tabulated_keys'] = tab_keys
+        res['tabulated_results'] = tab_vals
+        return res
