@@ -8,10 +8,11 @@ from collections import OrderedDict
 from typing import Dict, Any, List
 
 from .matching_func import can_match_na, can_match_option
-from .llm_extract import extract_ans_by_llm
+from .tools.files import get_judge_tag_from_score_fn, build_eval_paths
+from .llm_extract import parallel_llm_extract
 from ..judge_util import build_judge
-from ....utils.mp_util import track_progress_rich
 from ....smp.vlm import gpt_key_set
+from ....smp.file import get_intermediate_file_path
 
 
 def exact_match(pred: str, target: str) -> float:
@@ -160,21 +161,16 @@ def eval_mcq_score(
     order: list[str] | dict[str, list[str]] | None = None,
     dataset_name: str = 'MCQ'
 ):
-    suffix = eval_file.split('.')[-1]
-    result_file = eval_file.replace(f'.{suffix}', '_result.pkl')
-    base_no_suffix = eval_file[:-(len(suffix) + 1)]
+    judge_tag = get_judge_tag_from_score_fn(score_fn)
+    result_file, xlsx_path, acc_tsv_path = build_eval_paths(eval_file, judge_tag)
 
-    # Decide Excel filename according to actual judge type
-    judge_mode = getattr(score_fn, 'judge_mode', 'rule')
-    judge_model = getattr(score_fn, 'judge_model', None)
-
-    if judge_mode == 'llm':
-        judge_tag = f"llm_{judge_model}" if judge_model else "llm_matching"
-    else:
-        judge_tag = "extract_matching"
-
-    xlsx_path = f"{base_no_suffix}_{judge_tag}.xlsx"
-    acc_tsv_path = f"{base_no_suffix}_acc.tsv"
+    # only effective for LLM-based score_fn; rule-based is no-op
+    attach_score_cache(
+        score_fn=score_fn,
+        eval_file=eval_file,
+        judge_tag=judge_tag,
+        key_col='index',
+    )
 
     data = load_fn(eval_file)
     if 'index' in data.columns:
@@ -216,8 +212,8 @@ def eval_mcq_score(
                 acc = float(sub['hit'].mean()) * 100.0
                 summary[f'{prefix}{cat}_accuracy'] = acc
 
-    tab_keys = ", ".join(list(summary.keys()))
-    tab_vals = ", ".join([f"{v:.3f}" for v in summary.values()])
+    tab_keys = ', '.join(list(summary.keys()))
+    tab_vals = ', '.join([f'{v:.3f}' for v in summary.values()])
     summary['tabulated_keys'] = tab_keys
     summary['tabulated_results'] = tab_vals
 
@@ -226,9 +222,9 @@ def eval_mcq_score(
         import pickle
         with open(result_file, 'wb') as f:
             pickle.dump({'mcq_scored': mcq_scored, 'summary': summary}, f)
-        print(f"[save] result saved to {result_file}")
+        print(f'[save] result saved to {result_file}')
     except Exception as e:
-        warnings.warn(f"[save] failed to save result to {result_file}: {e}")
+        warnings.warn(f'[save] failed to save result to {result_file}: {e}')
 
     # ---------- extract_matching.xlsx ----------
     try:
@@ -243,11 +239,11 @@ def eval_mcq_score(
         ordered_cols = [c for c in prefer_front if c in merged.columns] + \
                        [c for c in merged.columns if c not in prefer_front]
         merged = merged[ordered_cols]
-        with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
-            merged.to_excel(writer, sheet_name="ALL", index=False)
-        print(f"[save] extract & matching saved to {xlsx_path}")
+        with pd.ExcelWriter(xlsx_path, engine='openpyxl') as writer:
+            merged.to_excel(writer, sheet_name='ALL', index=False)
+        print(f'[save] extract & matching saved to {xlsx_path}')
     except Exception as e:
-        warnings.warn(f"[save] failed to save extract xlsx to {xlsx_path}: {e}")
+        warnings.warn(f'[save] failed to save extract xlsx to {xlsx_path}: {e}')
 
     # ---------- acc.tsv ----------
     try:
@@ -271,11 +267,11 @@ def eval_mcq_score(
         wide = acc_df.T
         wide.to_csv(acc_tsv_path, sep='\t', index=False, float_format='%.4f')
 
-        print(f"[save] accuracy table saved to {acc_tsv_path}")
+        print(f'[save] accuracy table saved to {acc_tsv_path}')
     except Exception as e:
-        warnings.warn(f"[save] failed to save acc tsv to {acc_tsv_path}: {e}")
+        warnings.warn(f'[save] failed to save acc tsv to {acc_tsv_path}: {e}')
 
-    print(f"[{dataset_name}] summary: {summary}")
+    print(f'[{dataset_name}] summary: {summary}')
     return summary
 
 
@@ -287,6 +283,7 @@ def compute_score_llm(
     mode: str = 'mcq',
     max_retry: int = 3,
     nproc: int = 4,
+    **extra,
 ) -> pd.DataFrame:
     """
     LLM-based MCQ/VQA scoring.
@@ -297,40 +294,26 @@ def compute_score_llm(
         mode: 'mcq' or 'vqa'
         max_retry: max retry times per sample
         nproc: number of worker threads for parallel judging
+        extra:
+            - cache_file: optional cache pkl path
+            - key_col: column name used as cache key (default: 'index')
     """
-
-    # Prepare task list
-    rows: List[Dict[str, Any]] = list(df.to_dict(orient='records'))
-
-    def _one_sample(row: Dict[str, Any]):
-        """
-        Single-sample evaluation for track_progress_rich.
-        Returns (grade, extracted), where grade ∈ {'A', 'B', 'C'}.
-        """
-        s = pd.Series(row)
-        grade, extracted = extract_ans_by_llm(
-            model=model,
-            row=s,
-            mode=mode,
-            max_retry=max_retry,
-        )
-        return grade, extracted
-
-    # Build tasks
-    tasks = [dict(row=r) for r in rows]
-
-    results = track_progress_rich(
-        func=_one_sample,
-        tasks=tasks,
-        nproc=nproc,
-    )
-
-    # Write back
-    grades = [g for g, _ in results]
-    extracted_list = [e for _, e in results]
-    hits = [1 if g == 'A' else 0 for g in grades]
+    cache_file: str | None = extra.get('cache_file', None)
+    key_col: str = extra.get('key_col', 'index')
 
     df = df.copy()
+    grades, extracted_list = parallel_llm_extract(
+        df=df,
+        model=model,
+        mode=mode,
+        max_retry=max_retry,
+        nproc=nproc,
+        cache_file=cache_file,
+        key_col=key_col,
+    )
+
+    hits = [1 if g == 'A' else 0 for g in grades]
+
     df['judge_grade'] = grades          # 'A' / 'B' / 'C'
     df['pred_extracted'] = extracted_list
     df['hit'] = hits
@@ -344,63 +327,104 @@ def compute_na_score_llm(
     mode: str = 'vqa',
     max_retry: int = 3,
     nproc: int = 4,
+    **extra,
 ) -> pd.DataFrame:
     """
     LLM-based NA scoring.
 
     Workflow:
       - Use the LLM to extract the final numeric answer (mode='vqa')
-      - Then compute MRA, same as in compute_na_score
+      - Then compute MRA from extracted number and ground truth.
     """
-    # Prepare task list
-    rows = list(df.to_dict(orient='records'))
 
-    def _one_sample(row_dict):
-        """
-        Per-sample computation used by track_progress_rich.
-        Returns (grade, pred_num, mra).
-        """
-        row = pd.Series(row_dict)
+    cache_file: str | None = extra.get('cache_file', None)
+    key_col: str = extra.get('key_col', 'index')
 
-        grade, extracted = extract_ans_by_llm(
-            model=model,
-            row=row,
-            mode=mode,
-            max_retry=max_retry,
-        )
+    df = df.copy()
+    grades, extracted_list = parallel_llm_extract(
+        df=df,
+        model=model,
+        mode=mode,
+        max_retry=max_retry,
+        nproc=nproc,
+        cache_file=cache_file,
+        key_col=key_col,
+    )
 
+    pred_nums: list[float | None] = []
+    mra_list: list[float] = []
+
+    for grade, extracted, (_, row) in zip(
+        grades, extracted_list, df.iterrows()
+    ):
         pred_num = to_float(extracted)
         gt_num = to_float(row.get('answer', None))
 
-        if pred_num is None or gt_num is None or math.isnan(gt_num) or grade == 'C':
+        if (
+            pred_num is None
+            or gt_num is None
+            or math.isnan(gt_num)
+            or grade == 'C'
+        ):
             mra = 0.0
         else:
             mra = mean_relative_accuracy(pred_num, gt_num, 0.5, 0.95, 0.05)
 
-        return grade, pred_num, mra
+        pred_nums.append(pred_num)
+        mra_list.append(mra)
 
-    # Build tasks
-    tasks = [dict(row_dict=r) for r in rows]
-
-    results = track_progress_rich(
-        func=_one_sample,
-        tasks=tasks,
-        nproc=nproc,
-    )
-
-    # Write back
-    grades = [g for (g, _, _) in results]
-    preds = [p for (_, p, _) in results]
-    mra_list = [m for (_, _, m) in results]
-
-    df = df.copy()
-    df['judge_grade'] = grades          # 'A' / 'B' / 'C'
-    df['pred_extracted'] = preds           # float or None
+    df['judge_grade'] = grades              # 'A' / 'B' / 'C'
+    df['pred_extracted'] = pred_nums        # float or None
     df['MRA:.5:.95:.05'] = mra_list
     return df
 
 
 # ---------- Factory func ----------
+def attach_score_cache(
+    score_fn,
+    eval_file: str,
+    judge_tag: str,
+    *,
+    key_col: str = 'index',
+    sub_tag: str | None = None,
+):
+    """
+    Attach a cache file to an LLM-based score_fn for resume.
+
+    cache_file naming convention:
+        <eval_file base>_{judge_tag}[_<sub_tag>]_judge.<ext>
+
+    This function is no-op if:
+        - score_fn is None
+        - score_fn.judge_mode != 'llm'
+        - score_fn does not have 'llm_cache' attribute
+    """
+    if score_fn is None:
+        return None
+
+    if getattr(score_fn, 'judge_mode', 'rule') != 'llm':
+        return None
+
+    llm_cache = getattr(score_fn, 'llm_cache', None)
+    if llm_cache is None:
+        return None
+
+    suffix_parts = [f'_{judge_tag}']
+    if sub_tag:
+        suffix_parts.append(f'_{sub_tag}')
+    suffix = ''.join(suffix_parts) + '_judge'
+
+    cache_file = get_intermediate_file_path(
+        eval_file,
+        suffix=suffix,
+        target_format='pkl',
+    )
+
+    llm_cache['file'] = cache_file
+    llm_cache['key_col'] = key_col
+    return cache_file
+
+
 def _build_llm_judge(judge_kwargs: dict, *, task_name: str):
     """
     Try to build an LLM judge from judge_kwargs.
@@ -467,6 +491,11 @@ def _build_score_fn(
     max_retry = judge_kwargs.get('retry', 3)
     nproc = judge_kwargs.get('nproc', judge_kwargs.get('api_nproc', 1) or 1)
 
+    llm_cache = {
+        'file': None,
+        'key_col': 'index',
+    }
+
     # 3. Wrap into df -> df scorer
     def score_fn(df: pd.DataFrame) -> pd.DataFrame:
         kwargs = dict(
@@ -475,11 +504,14 @@ def _build_score_fn(
             mode=mode,
             max_retry=max_retry,
             nproc=nproc,
+            cache_file=llm_cache['file'],
+            key_col=llm_cache['key_col'],
         )
         return llm_fn(**kwargs)
 
     score_fn.judge_mode = 'llm'
     score_fn.judge_model = model_name
+    score_fn.llm_cache = llm_cache
     return score_fn
 
 
@@ -488,7 +520,7 @@ def build_mcq_score_fn(**judge_kwargs):
     Build an MCQ scoring function based on judge_kwargs['model'].
     """
     return _build_score_fn(
-        task_name="MCQ",
+        task_name='MCQ',
         judge_kwargs=judge_kwargs,
         rule_fn=compute_mcq_score,
         llm_fn=compute_score_llm,   # note: this is the generic LLM scorer
@@ -501,7 +533,7 @@ def build_na_score_fn(**judge_kwargs):
     Build an NA scoring function based on judge_kwargs['model'].
     """
     return _build_score_fn(
-        task_name="NA",
+        task_name='NA',
         judge_kwargs=judge_kwargs,
         rule_fn=compute_na_score,
         llm_fn=compute_na_score_llm,
