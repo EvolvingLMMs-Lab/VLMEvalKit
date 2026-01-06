@@ -128,11 +128,11 @@ class MMSIVideoBench(VideoBaseDataset):
     TYPE = 'MCQ'
 
     DATASET_URL = {
-        'MMSIVideoBench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/MMSIVideoBench.tsv'  # noqa: E501
+        'MMSIVideoBench': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/MMSIVideoBench_with_subbench.tsv'  # noqa: E501
     }
 
     DATASET_MD5 = {
-        'MMSIVideoBench': '814e84913f3faab4ef63c3dfb82a73a3'
+        'MMSIVideoBench': None
     }
 
     _CATEGORY_TASK_ORDER = None
@@ -234,7 +234,11 @@ class MMSIVideoBench(VideoBaseDataset):
                 from modelscope import dataset_snapshot_download
                 dataset_path = dataset_snapshot_download(dataset_id=repo_id)
             else:
-                dataset_path = snapshot_download(repo_id=repo_id, repo_type='dataset')
+                dataset_path = snapshot_download(
+                    repo_id=repo_id,
+                    repo_type='dataset',
+                    ignore_patterns='videos.zip'
+                )
 
             unzip_hf_zip(dataset_path)
 
@@ -283,8 +287,7 @@ class MMSIVideoBench(VideoBaseDataset):
             data['ref_images'] = data['ref_images'].map(to_abs)
 
         new_data_path = os.path.join(self.LMUData_root, 'MMSIVideoBench_abs_path.tsv')
-        if not os.path.exists(new_data_path):
-            dump(data, new_data_path)
+        dump(data, new_data_path)
 
         return dict(data_file=new_data_path, root=dataset_path)
 
@@ -475,13 +478,18 @@ class MMSIVideoBench(VideoBaseDataset):
         return message
 
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.spatial_bench.cal_scores import eval_mcq_score, build_mcq_score_fn
+        from .utils.spatial_bench.cal_scores import (
+            eval_mcq_score,
+            build_mcq_score_fn,
+            get_intermediate_file_path,
+            get_judge_tag_from_score_fn
+        )
 
         # Select MCQ scoring function (rule-based or LLM-based) according to judge_kwargs['model'].
         score_fn = build_mcq_score_fn(**judge_kwargs)
 
         category_task_order = self.category_task_order()
-        return eval_mcq_score(
+        summary, mcq_scored = eval_mcq_score(
             load_fn=load,
             eval_file=eval_file,
             score_fn=score_fn,
@@ -490,5 +498,79 @@ class MMSIVideoBench(VideoBaseDataset):
                 'task_type': list(category_task_order.keys()),
                 'sub_task_type': sum(category_task_order.values(), []),
             },
-            dataset_name=getattr(self, 'dataset_name', 'MMSIVideoBench')
+            dataset_name=getattr(self, 'dataset_name', 'MMSIVideoBench'),
+            return_scored=True
         )
+
+        sub_results = self._aggregate_subsets(mcq_scored=mcq_scored)
+
+        judge_tag = get_judge_tag_from_score_fn(score_fn)
+        subset_acc_path = get_intermediate_file_path(
+            eval_file,
+            suffix=f'_{judge_tag}_subset_acc'
+        )
+
+        # *_subbench_acc.tsv
+        if sub_results:
+            acc_items = [(k, v * 100.0) for k, v in sub_results.items()]
+            df = pd.DataFrame(acc_items, columns=['metric', 'value'])
+            df.to_csv(subset_acc_path, sep='\t', index=False, float_format='%.4f')
+            print(f'[save] sub-bench accuracy table saved to {subset_acc_path}')
+
+        return summary
+
+    def _aggregate_subsets(self, mcq_scored: pd.DataFrame):
+        SUB_BENCH_COLS = [
+            'Easy2hard',
+            'Grounding',
+            'Indoor_Scene_Perception',
+            'Robot',
+        ]
+
+        def is_nan_or_none(value):
+            if value is None:
+                return True
+            try:
+                if isinstance(value, str) and value.lower() in ['nan', 'null', 'none', '']:
+                    return True
+                if isinstance(value, float) and value != value:
+                    return True
+            except BaseException:
+                pass
+            return False
+
+        if 'hit' not in mcq_scored.columns:
+            raise KeyError('mcq_scored is missing column: hit')
+
+        score_dict: dict[str, list[float]] = {}
+
+        for _, row in mcq_scored.iterrows():
+            acc = float(row['hit'])  # 0 or 1
+
+            for bench_col in SUB_BENCH_COLS:
+                if bench_col not in mcq_scored.columns:
+                    continue
+
+                tag = row.get(bench_col)
+                if is_nan_or_none(tag):
+                    continue
+
+                # '(Easy2hard)Avg'、'(Robot)Avg'
+                avg_key = f'({bench_col})Avg'
+                score_dict.setdefault(avg_key, []).append(acc)
+
+                # '(Easy2hard)level_1'、'(Indoor_Scene_Perception)Dynamic Scene'
+                fine_key = f'({bench_col}){tag}'
+                score_dict.setdefault(fine_key, []).append(acc)
+
+        results: dict[str, float] = {}
+
+        print('==== MMSI-Video Sub-Bench Scores ====')
+        for key, vals in score_dict.items():
+            if not vals:
+                continue
+            acc = float(np.mean(vals))
+            results[key] = acc
+            print(f'{key}: {acc:.4f} (#samples={len(vals)})')
+
+        return results
