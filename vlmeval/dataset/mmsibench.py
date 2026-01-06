@@ -528,15 +528,21 @@ class MMSIVideoBench(VideoBaseDataset):
         ]
 
         def is_nan_or_none(value):
+            import math
+            import numbers
+
             if value is None:
                 return True
-            try:
-                if isinstance(value, str) and value.lower() in ['nan', 'null', 'none', '']:
-                    return True
-                if isinstance(value, float) and value != value:
-                    return True
-            except BaseException:
-                pass
+
+            if isinstance(value, str):
+                return value.strip().lower() in {'nan', 'null', 'none', ''}
+
+            if isinstance(value, numbers.Number):
+                try:
+                    return math.isnan(value)
+                except TypeError:
+                    return False
+
             return False
 
         if 'hit' not in mcq_scored.columns:
