@@ -512,7 +512,7 @@ class MMSIVideoBench(VideoBaseDataset):
 
         # *_subbench_acc.tsv
         if sub_results:
-            acc_items = [(k, v * 100.0) for k, v in sub_results.items()]
+            acc_items = list(sub_results.items())
             df = pd.DataFrame(acc_items, columns=['metric', 'value'])
             df.to_csv(subset_acc_path, sep='\t', index=False, float_format='%.4f')
             print(f'[save] sub-bench accuracy table saved to {subset_acc_path}')
@@ -569,8 +569,8 @@ class MMSIVideoBench(VideoBaseDataset):
         for key, vals in score_dict.items():
             if not vals:
                 continue
-            acc = float(np.mean(vals))
+            acc = float(np.mean(vals)) * 100.0
             results[key] = acc
-            print(f'{key}: {acc:.4f} (#samples={len(vals)})')
+            print(f'{key}: {acc:.3f} (#samples={len(vals)})')
 
         return results
