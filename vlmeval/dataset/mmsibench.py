@@ -128,11 +128,11 @@ class MMSIVideoBench(VideoBaseDataset):
     TYPE = 'MCQ'
 
     DATASET_URL = {
-        'MMSIVideoBench': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/MMSIVideoBench_with_subbench.tsv'  # noqa: E501
+        'MMSIVideoBench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/MMSIVideoBench.tsv'  # noqa: E501
     }
 
     DATASET_MD5 = {
-        'MMSIVideoBench': None
+        'MMSIVideoBench': '2903ab3c6b06541aa28838c2368eb507'
     }
 
     _CATEGORY_TASK_ORDER = None
