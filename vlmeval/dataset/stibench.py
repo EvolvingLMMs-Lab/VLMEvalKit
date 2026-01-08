@@ -29,10 +29,10 @@ class STIBench(VideoBaseDataset):
     LMUData_root = LMUDataRoot()
 
     DATASET_URL = {
-        'STI-Bench': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/STIBench.tsv',  # noqa: E501
+        'STI-Bench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/STIBench.tsv',  # noqa: E501
     }
     DATASET_MD5 = {
-        'STI-Bench': None,
+        'STI-Bench': '9493f1a66374dbd7bf89992d6d1ff117',
     }
 
     def __init__(self, dataset, pack=False, nframe=0, fps=-1):
@@ -46,21 +46,21 @@ class STIBench(VideoBaseDataset):
     def _task_category(self):
         return [
             # Top level: Static Understanding
-            "Dimensional Measurement",
-            "Spatial Relation",
-            "3D Video Grounding",
+            'Dimensional Measurement',
+            'Spatial Relation',
+            '3D Video Grounding',
 
             # Top level: Dynamic Understanding
-            "Displacement & Path Length",
-            "Speed & Acceleration",
-            "Ego-Centric Orientation",
-            "Trajectory Description",
-            "Pose Estimation",
+            'Displacement & Path Length',
+            'Speed & Acceleration',
+            'Ego-Centric Orientation',
+            'Trajectory Description',
+            'Pose Estimation',
         ]
 
     def download_stibench(self, repo_id='MINT-SJTU/STI-Bench'):
         cache_path = get_cache_path(repo_id)
-        SENTINEL_NAME = '.stiibench_extracted'
+        SENTINEL_NAME = '.stibench_extracted'
 
         if (cache_path and os.path.isdir(cache_path)
                 and os.path.isfile(os.path.join(cache_path, SENTINEL_NAME))):
@@ -200,9 +200,15 @@ class STIBench(VideoBaseDataset):
 
         frames, _, video_info = self.save_video_frames(line['video'], video_llm)
 
+        sample_fps = video_info.get('sample_fps')
+        if sample_fps is not None:
+            fps_text = f"which are sampled at about {sample_fps:.2f} FPS.\n"
+        else:
+            fps_text = "which are sampled at an unspecified frame rate.\n"
+
         prompt_text = (
             f"Answer the question below based on the frames provided, "
-            f"which are sampled at about {video_info['sample_fps']:.2f} FPS.\n"
+            f"{fps_text}"
             f"Question: {question}\n"
             f"Please output only the option you choose!"
         )
