@@ -29,10 +29,10 @@ class STIBench(VideoBaseDataset):
     LMUData_root = LMUDataRoot()
 
     DATASET_URL = {
-        'STI-Bench': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/STIBench.tsv',  # noqa: E501
+        'STI-Bench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/STIBench.tsv',  # noqa: E501
     }
     DATASET_MD5 = {
-        'STI-Bench': None,
+        'STI-Bench': '9493f1a66374dbd7bf89992d6d1ff117',
     }
 
     def __init__(self, dataset, pack=False, nframe=0, fps=-1):
@@ -46,16 +46,16 @@ class STIBench(VideoBaseDataset):
     def _task_category(self):
         return [
             # Top level: Static Understanding
-            "Dimensional Measurement",
-            "Spatial Relation",
-            "3D Video Grounding",
+            'Dimensional Measurement',
+            'Spatial Relation',
+            '3D Video Grounding',
 
             # Top level: Dynamic Understanding
-            "Displacement & Path Length",
-            "Speed & Acceleration",
-            "Ego-Centric Orientation",
-            "Trajectory Description",
-            "Pose Estimation",
+            'Displacement & Path Length',
+            'Speed & Acceleration',
+            'Ego-Centric Orientation',
+            'Trajectory Description',
+            'Pose Estimation',
         ]
 
     def download_stibench(self, repo_id='MINT-SJTU/STI-Bench'):
