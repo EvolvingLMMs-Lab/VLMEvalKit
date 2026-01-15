@@ -1,15 +1,14 @@
 import os
 import ast
-import decord
-import string
 import json
+import decord
 import numpy as np
 
 from PIL import Image
 from tqdm import tqdm
 from huggingface_hub import snapshot_download
 
-from ..smp.misc import get_cache_path, modelscope_flag_set
+from ..smp.misc import get_cache_path
 from ..smp.file import LMUDataRoot, load
 from .video_base import VideoBaseDataset
 
@@ -28,16 +27,14 @@ Respond with only the letter (A, B, C, or D) of the correct option.
     LMUData_root = LMUDataRoot()
 
     DATASET_URL = {
-        'DSRBench': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/DSRBench.tsv',  # noqa: E501
+        'DSRBench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/DSRBench.tsv',  # noqa: E501
     }
     DATASET_MD5 = {
-        'DSRBench': None,
+        'DSRBench': '9273aeb004e8ca196df5a5e826bdf97d',
     }
 
     def __init__(self, dataset, nframe=0, fps=-1):
         super().__init__(dataset=dataset, nframe=nframe, fps=fps)
-        # self.use_subtitle = use_subtitle
-        # self.dataset_name = dataset
 
     @classmethod
     def supported_datasets(cls):
@@ -60,16 +57,75 @@ Respond with only the letter (A, B, C, or D) of the correct option.
             'non_temp',
         ]
 
-    def prepare_dataset(self, dataset_name):
+    def download_dsrbench(self, repo_id):
+        cache_path = get_cache_path(repo_id)
+        SENTINEL_NAME = '.dsrbench_extracted'
+        raw_data_dir = os.path.join(cache_path, "raw_data")
+
+        if (cache_path and os.path.isdir(cache_path)
+                and os.path.isfile(os.path.join(raw_data_dir, SENTINEL_NAME))):
+            dataset_path = cache_path
+        else:
+            def _write_sentinel(sentinel_path, text='ok'):
+                tmp = sentinel_path + '.tmp'
+                with open(tmp, 'w', encoding='utf-8') as f:
+                    f.write(text)
+                os.replace(tmp, sentinel_path)
+
+            def unzip_hf_zip(pth):
+                import zipfile
+
+                base_dir = pth
+                zip_files = [
+                    os.path.join(base_dir, f) for f in os.listdir(base_dir)
+                    if f.endswith('.zip')
+                ]
+                zip_files.sort()
+
+                for zip_file in tqdm(zip_files, desc='Unpacking Origin Data...'):
+                    with zipfile.ZipFile(zip_file, 'r') as zf:
+                        for info in zf.infolist():
+                            if info.is_dir():
+                                continue
+
+                            rel = os.path.normpath(info.filename).lstrip('/\\')
+                            dst = os.path.join(pth, rel)
+
+                            absp = os.path.abspath(pth)
+                            absd = os.path.abspath(dst)
+                            if not absd.startswith(absp + os.sep):
+                                raise RuntimeError(f'Unsafe path in zip: {info.filename}')
+
+                            os.makedirs(os.path.dirname(dst), exist_ok=True)
+                            with zf.open(info, 'r') as src, open(dst, 'wb') as out:
+                                out.write(src.read())
+
+                sentinel_path = os.path.join(pth, SENTINEL_NAME)
+                _write_sentinel(sentinel_path, text='done')
+                print('VsiBench data extracted to current directory with original layout.')
+
+            snapshot_download(
+                repo_id=repo_id,
+                repo_type='dataset',
+                allow_patterns=["raw_data/dsr-bench.zip"],
+            )
+
+            unzip_hf_zip(raw_data_dir)
+
+        dataset_path = os.path.join(raw_data_dir, "dsr-bench")
+        return dataset_path
+
+    def prepare_dataset(self, dataset_name: str):
         url = self.DATASET_URL[dataset_name]
         md5 = self.DATASET_MD5[dataset_name]
 
         _ = super().prepare_tsv(url, md5)
 
-        dataset_path = "/mnt/umm/users/wc_workspace/dsr-bench"
+        # DSR-Bench did not provide the original data; EASI hosted a copy on its behalf.
+        dataset_path = self.download_dsrbench(repo_id='lmms-lab-si/EASI-Leaderboard-Data')
         self.dataset_path = dataset_path
 
-        variant_data_file = os.path.join(self.LMUData_root, f'{dataset_name}.tsv')
+        variant_data_file = os.path.join(self.LMUData_root, f"{dataset_name}.tsv")
 
         return dict(data_file=variant_data_file, root=dataset_path)
 
