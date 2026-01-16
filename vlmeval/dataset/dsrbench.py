@@ -151,14 +151,21 @@ Respond with only the letter (A, B, C, or D) of the correct option.
             indices = [int(i * step_size) for i in range(required_frames)]
             frame_paths = self.frame_paths_fps(video_path, len(indices))
 
-        flag = np.all([os.path.exists(p) for p in frame_paths])
+        missing = [
+            (idx, pth) for idx, pth in zip(indices, frame_paths)
+            if not os.path.exists(pth)
+        ]
 
-        if not flag:
-            images = [vid[i].asnumpy() for i in indices]
-            images = [Image.fromarray(arr) for arr in images]
-            for im, pth in zip(images, frame_paths):
-                if not os.path.exists(pth) and not video_llm:
-                    im.save(pth)
+        if missing and not video_llm:
+            for frame_idx, pth in missing:
+                try:
+                    frame_data = vid[frame_idx].asnumpy()
+                    Image.fromarray(frame_data).save(pth)
+                except Exception as e:
+                    error_msg = f"Error saving frame {frame_idx} from {video_path}: {str(e)}"
+                    print(error_msg)
+
+                    raise ValueError(error_msg) from e
 
         video_info = {
             'fps': video_fps,
