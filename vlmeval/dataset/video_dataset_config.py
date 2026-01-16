@@ -210,10 +210,10 @@ VSI_FRAME_VARIANTS = [
 ]
 
 
-def _build_video_variants(subsets, cls):
+def _build_video_variants(subsets, cls, variants=VSI_FRAME_VARIANTS):
     out = {}
     for variant in subsets:
-        for suffix, params in VSI_FRAME_VARIANTS:
+        for suffix, params in variants:
             out[f"{variant}_{suffix}"] = partial(cls, dataset=variant, **params)
     return out
 
@@ -245,6 +245,27 @@ mmsi_video_dataset = {
     'MMSIVideoBench_1fps': partial(MMSIVideoBench, dataset='MMSIVideoBench', fps=1),
 }
 
+sti_subsets = STIBench.supported_datasets()
+sti_variants = [
+    ("64frame", dict(nframe=64)),
+    ("32frame", dict(nframe=32)),
+    # The 30 frame setting is aligned with offical seting STI-Bench paper
+    ("30frame", dict(nframe=30)),
+    ("1fps", dict(fps=1.0)),
+]
+sti_dataset = _build_video_variants(sti_subsets, STIBench, sti_variants)
+
+dsr_subsets = DSRBench.supported_datasets()
+dsr_variants = [
+    ("64frame", dict(nframe=64)),
+    ("32frame", dict(nframe=32)),
+    ("30frame", dict(nframe=30)),
+    # The 1fps setting is aligned with offical seting DSR-Bench paper
+    ("1fps", dict(fps=1.0)),
+]
+dsr_dataset = _build_video_variants(dsr_subsets, DSRBench, dsr_variants)
+
+
 supported_video_datasets = {}
 
 dataset_groups = [
@@ -256,7 +277,8 @@ dataset_groups = [
 
 # add by EASI team
 dataset_groups += [
-    video_vsi_dataset, sitebenchvideo_dataset, mmsi_video_dataset, vsisuper_recall_dataset, vsisuper_count_dataset
+    video_vsi_dataset, sitebenchvideo_dataset, mmsi_video_dataset, vsisuper_recall_dataset, vsisuper_count_dataset,
+    sti_dataset, dsr_dataset
 ]
 
 for grp in dataset_groups:
