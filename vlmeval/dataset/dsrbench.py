@@ -64,7 +64,7 @@ Respond with only the letter (A, B, C, or D) of the correct option.
 
         if (cache_path and os.path.isdir(cache_path)
                 and os.path.isfile(os.path.join(raw_data_dir, SENTINEL_NAME))):
-            dataset_path = cache_path
+            pass
         else:
             def _write_sentinel(sentinel_path, text='ok'):
                 tmp = sentinel_path + '.tmp'
@@ -102,14 +102,15 @@ Respond with only the letter (A, B, C, or D) of the correct option.
 
                 sentinel_path = os.path.join(pth, SENTINEL_NAME)
                 _write_sentinel(sentinel_path, text='done')
-                print('VsiBench data extracted to current directory with original layout.')
+                print('DSR-Bench data extracted to current directory with original layout.')
 
-            snapshot_download(
+            download_dir = snapshot_download(
                 repo_id=repo_id,
                 repo_type='dataset',
                 allow_patterns=["raw_data/dsr-bench.zip"],
             )
 
+            raw_data_dir = os.path.join(download_dir, "raw_data")
             unzip_hf_zip(raw_data_dir)
 
         dataset_path = os.path.join(raw_data_dir, "dsr-bench")
@@ -170,8 +171,6 @@ Respond with only the letter (A, B, C, or D) of the correct option.
         if isinstance(line, int):
             assert line < len(self)
             line = self.data.iloc[line]
-
-        frames, _, _ = self.save_video_frames(line['video'], video_llm)
 
         pre_prompt = self.FRAMES_TMPL_NOSUB
         question = line['question']
