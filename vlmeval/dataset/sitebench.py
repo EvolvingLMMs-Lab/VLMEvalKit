@@ -371,7 +371,9 @@ class SiteBenchVideo(SiteBenchBase, VideoBaseDataset):
 
         # Align with official SiteBench
         indices = np.linspace(0, video_nframes - 1, self.nframe, dtype=int).tolist()
-        frame_paths = self.frame_paths(video.replace(self.dataset_path, ''))
+        # Use os.path.relpath for robust relative path extraction
+        rel_video_path = os.path.relpath(video, self.dataset_path)
+        frame_paths = self.frame_paths(rel_video_path)
 
         flag = np.all([os.path.exists(p) for p in frame_paths])
         if not flag:
