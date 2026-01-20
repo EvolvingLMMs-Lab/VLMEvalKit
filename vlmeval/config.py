@@ -2131,6 +2131,23 @@ sensenova_si_series = {
     ),
 }
 
+neo_series = {
+    "NEO1_0-2B-SFT": partial(
+        NEOChat, model_path="Paranioar/NEO1_0-2B-SFT", 
+        patch_size=16,
+        min_pixels=1280 * 32 * 32,
+        max_pixels=4096 * 32 * 32,
+        downsample_ratio=0.5,
+    ),
+    "NEO1_0-9B-SFT": partial(
+        NEOChat, model_path="Paranioar/NEO1_0-9B-SFT", 
+        patch_size=16,
+        min_pixels=1280 * 32 * 32,
+        max_pixels=4096 * 32 * 32,
+        downsample_ratio=0.5,
+    )
+}
+
 internvl_groups = [
     internvl, internvl2, internvl2_5, mini_internvl, internvl2_5_mpo, 
     internvl3, internvl3_5
@@ -2166,7 +2183,7 @@ model_groups = [
 ]
 
 # add by EASI team 
-model_groups.extend([bagel_series, spatial_related_models, sensenova_si_series])
+model_groups.extend([bagel_series, spatial_related_models, sensenova_si_series, neo_series])
 
 for grp in model_groups:
     supported_VLM.update(grp)
