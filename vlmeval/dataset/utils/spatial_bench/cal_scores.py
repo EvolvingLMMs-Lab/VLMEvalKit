@@ -278,12 +278,160 @@ def eval_mcq_score(
     return summary
 
 
+# # High-level evaluation core for VQA-style datasets
+def eval_vqa_score(
+    *,
+    load_fn,
+    eval_file: str,
+    score_fn,
+    group_col: str | list[str] | None = 'category',
+    order: list[str] | dict[str, list[str]] | None = None,
+    dataset_name: str = 'VQA',
+    return_scored: bool = False,
+):
+    # 1. Build scoring function
+    judge_tag = (
+        get_judge_tag_from_score_fn(score_fn)
+        if score_fn is not None
+        else 'extract_matching'
+    )
+    result_file, xlsx_path, acc_tsv_path = build_eval_paths(eval_file, judge_tag)
+
+    # 2. Attach cache to scoring function
+    attach_score_cache(
+        score_fn=score_fn,
+        eval_file=eval_file,
+        judge_tag=judge_tag,
+        key_col='index',
+        sub_tag='vqa',
+    )
+
+    data = load_fn(eval_file)
+    if 'index' in data.columns:
+        data = data.sort_values(by='index')
+    data['prediction'] = [str(x) for x in data['prediction']]
+
+    # 3. Run scoring
+    vqa_scored = score_fn(data) if score_fn is not None else data
+
+    # 4. Normalize grouping inputs
+    if group_col is None:
+        group_cols: list[str] = []
+    elif isinstance(group_col, str):
+        group_cols = [group_col]
+    else:
+        group_cols = list(group_col)
+
+    if isinstance(order, dict) or order is None:
+        order_map: dict[str, list[str]] = order or {}
+    elif group_cols:
+        order_map = {group_cols[0]: order}
+    else:
+        order_map = {}
+
+    score_col = None
+    score_divisor = 1.0
+    metric_suffix = '_score'
+
+    if 'score_normalized' in vqa_scored.columns:
+        score_col = 'score_normalized'
+    elif 'judge_score' in vqa_scored.columns:
+        score_col = 'judge_score'
+        score_divisor = 5.0
+    elif 'hit' in vqa_scored.columns:
+        score_col = 'hit'
+        metric_suffix = '_accuracy'
+
+    summary = OrderedDict()
+    if score_col is None or len(vqa_scored) == 0:
+        summary['overall'] = 0.0
+    else:
+        col_vals = pd.to_numeric(vqa_scored[score_col], errors='coerce').dropna()
+        if not len(col_vals):
+            summary['overall'] = 0.0
+        else:
+            overall = float(col_vals.mean()) / score_divisor
+            summary['overall'] = overall * 100.0
+
+    if score_col and group_cols:
+        for gc in group_cols:
+            if gc not in vqa_scored.columns:
+                continue
+
+            preferred = order_map.get(gc, []) or []
+            present = list(vqa_scored[gc].dropna().unique().tolist())
+            remain = [c for c in present if c not in preferred]
+            cat_order = preferred + remain
+            prefix = '' if len(group_cols) == 1 else f'{gc}.'
+
+            for cat in cat_order:
+                sub = vqa_scored[vqa_scored[gc] == cat]
+                if not len(sub):
+                    continue
+                cat_vals = pd.to_numeric(sub[score_col], errors='coerce').dropna()
+                if not len(cat_vals):
+                    continue
+                cat_score = float(cat_vals.mean()) / score_divisor
+                summary[f'{prefix}{cat}{metric_suffix}'] = cat_score * 100.0
+
+    tab_keys = ', '.join(list(summary.keys()))
+    tab_vals = ', '.join([f'{v:.3f}' for v in summary.values()])
+    summary['tabulated_keys'] = tab_keys
+    summary['tabulated_results'] = tab_vals
+
+    # 5. pkl
+    try:
+        import pickle
+        with open(result_file, 'wb') as f:
+            pickle.dump({'vqa_scored': vqa_scored, 'summary': summary}, f)
+        print(f'[save] result saved to {result_file}')
+    except Exception as e:
+        warnings.warn(f'[save] failed to save result to {result_file}: {e}')
+
+    # 6. result xlsx
+    try:
+        prefer_front = [
+            'index',
+            group_cols[0] if group_cols else None,
+            'question',
+            'prediction', 'pred_extracted', 'answer',
+            'judge_score', 'score_normalized', 'judge_grade', 'hit'
+        ]
+        prefer_front = [c for c in prefer_front if c is not None and c in vqa_scored.columns]
+
+        ordered = prefer_front + [c for c in vqa_scored.columns if c not in prefer_front]
+        merged = vqa_scored[ordered]
+        with pd.ExcelWriter(xlsx_path, engine='openpyxl') as writer:
+            merged.to_excel(writer, sheet_name='ALL', index=False)
+        print(f'[save] extract & matching saved to {xlsx_path}')
+    except Exception as e:
+        warnings.warn(f'[save] failed to save extract xlsx to {xlsx_path}: {e}')
+
+    # 7. accuracy tsv
+    try:
+        acc_df = pd.DataFrame(
+            [(k, v) for k, v in summary.items()
+                if k not in ('tabulated_keys', 'tabulated_results')],
+            columns=['metric', 'value']
+        )
+        acc_df.to_csv(acc_tsv_path, sep='\t', index=False, float_format='%.4f')
+        print(f'[save] accuracy table saved to {acc_tsv_path}')
+    except Exception as e:
+        warnings.warn(f'[save] failed to save acc tsv to {acc_tsv_path}: {e}')
+
+    print(f'[{dataset_name}] summary: {summary}')
+    if return_scored:
+        return summary, vqa_scored
+    return summary
+
+
 # ---------- LLM-based scoring ----------
 def compute_score_llm(
     df: pd.DataFrame,
     model,
     *,
-    mode: str = 'mcq',
+    qa_mode: str = 'mcq',
+    judge_mode: str = 'binary',
     max_retry: int = 3,
     nproc: int = 4,
     **extra,
@@ -294,7 +442,8 @@ def compute_score_llm(
     Args:
         df: input dataframe (must contain at least question / prediction / answer).
         model: judge model with .generate(prompt: str) -> str
-        mode: 'mcq' or 'vqa'
+        qa_mode: 'mcq' or 'vqa'
+        judge_mode: 'binary' (A/B/C) or 'likert5'
         max_retry: max retry times per sample
         nproc: number of worker threads for parallel judging
         extra:
@@ -308,12 +457,19 @@ def compute_score_llm(
     grades, extracted_list = parallel_llm_extract(
         df=df,
         model=model,
-        mode=mode,
+        qa_mode=qa_mode,
+        judge_mode=judge_mode,
         max_retry=max_retry,
         nproc=nproc,
         cache_file=cache_file,
         key_col=key_col,
     )
+
+    if judge_mode == 'likert5':
+        df['judge_score'] = grades
+        df['pred_extracted'] = extracted_list
+        df['score_normalized'] = [g / 5 if isinstance(g, (int, float)) else 0 for g in grades]
+        return df
 
     hits = [1 if g == 'A' else 0 for g in grades]
 
@@ -327,7 +483,8 @@ def compute_na_score_llm(
     df: pd.DataFrame,
     model,
     *,
-    mode: str = 'vqa',
+    qa_mode: str = 'vqa',
+    judge_mode: str = 'binary',
     max_retry: int = 3,
     nproc: int = 4,
     **extra,
@@ -336,7 +493,7 @@ def compute_na_score_llm(
     LLM-based NA scoring.
 
     Workflow:
-      - Use the LLM to extract the final numeric answer (mode='vqa')
+    - Use the LLM to extract the final numeric answer (qa_mode='vqa')
       - Then compute MRA from extracted number and ground truth.
     """
 
@@ -347,7 +504,8 @@ def compute_na_score_llm(
     grades, extracted_list = parallel_llm_extract(
         df=df,
         model=model,
-        mode=mode,
+        qa_mode=qa_mode,
+        judge_mode=judge_mode,
         max_retry=max_retry,
         nproc=nproc,
         cache_file=cache_file,
@@ -399,13 +557,13 @@ def attach_score_cache(
 
     This function is no-op if:
         - score_fn is None
-        - score_fn.judge_mode != 'llm'
+        - score_fn.judge_backend != 'llm'
         - score_fn does not have 'llm_cache' attribute
     """
     if score_fn is None:
         return None
 
-    if getattr(score_fn, 'judge_mode', 'rule') != 'llm':
+    if getattr(score_fn, 'judge_backend', 'rule') != 'llm':
         return None
 
     llm_cache = getattr(score_fn, 'llm_cache', None)
@@ -458,7 +616,8 @@ def _build_score_fn(
     judge_kwargs: dict,
     rule_fn: callable,
     llm_fn: callable,
-    mode: str | None = None,
+    qa_mode: str | None = None,
+    judge_mode: str | None = None,
 ):
     """
     Generic factory to choose between rule-based scoring and LLM-based scoring.
@@ -468,8 +627,9 @@ def _build_score_fn(
         judge_kwargs: kwargs used to build the judge model.
         rule_fn: rule-based scorer, signature: rule_fn(df) -> df.
         llm_fn: LLM-based scorer, signature:
-            llm_fn(df, model, mode=..., max_retry=..., nproc=...) -> df
-        mode: if not None, passed as mode=mode to llm_fn (for MCQ).
+            llm_fn(df, model, qa_mode=..., max_retry=..., nproc=...) -> df
+        qa_mode: if not None, forwarded as qa_mode=qa_mode to llm_fn (for MCQ/VQA selection).
+        judge_mode: if not None, forwarded as judge_mode=judge_mode to llm_fn (e.g., 'binary', 'likert5').
     """
     model_name = judge_kwargs.get('model', None)
 
@@ -477,18 +637,28 @@ def _build_score_fn(
         def score_fn(df: pd.DataFrame) -> pd.DataFrame:
             return rule_fn(df)
 
-        score_fn.judge_mode = 'rule'
+        score_fn.judge_backend = 'rule'
         # for rule-based path, if model_name is None, we treat it as 'extract_matching'
         score_fn.judge_model = model_name or 'extract_matching'
+        score_fn.judge_mode = judge_mode
         return score_fn
 
     # 1. Rule-based path
     if model_name is None or model_name in ('exact_matching', 'extract_matching'):
+        if task_name.upper() == 'VQA':
+            raise ValueError(
+                "VQA evaluation requires an LLM judge. Please specify a valid model in judge_kwargs."
+            )
         return _make_rule_score_fn()
 
     # 2. Build LLM judge
     model = _build_llm_judge(judge_kwargs, task_name=task_name)
     if model is None:
+        if task_name.upper() == 'VQA':
+            raise RuntimeError(
+                f"VQA evaluation requires an LLM judge, but building the judge {model_name} failed. "
+                "Please check your API keys or network connection."
+            )
         return _make_rule_score_fn()
 
     max_retry = judge_kwargs.get('retry', 3)
@@ -504,21 +674,42 @@ def _build_score_fn(
         kwargs = dict(
             df=df,
             model=model,
-            mode=mode,
+            qa_mode=qa_mode,
             max_retry=max_retry,
             nproc=nproc,
             cache_file=llm_cache['file'],
             key_col=llm_cache['key_col'],
         )
+        if judge_mode is not None:
+            kwargs['judge_mode'] = judge_mode
         return llm_fn(**kwargs)
 
-    score_fn.judge_mode = 'llm'
+    score_fn.judge_backend = 'llm'
     score_fn.judge_model = model_name
+    score_fn.judge_mode = judge_mode
     score_fn.llm_cache = llm_cache
     return score_fn
 
 
-def build_mcq_score_fn(**judge_kwargs):
+# Scoring Parameter simplified explanation
+# 1) task_name determines "Question Type Semantics" and qa_mode:
+#    - MCQ -> qa_mode='mcq'
+#    - NA  -> qa_mode='vqa' (Numerical answers also use VQA extraction)
+#    - VQA -> qa_mode='vqa'
+# 2) qa_mode only affects extraction when judge_mode='binary':
+#    - 'mcq': Constructs an options_block to assist in selecting from options.
+#    - 'vqa': No options_block; extracts from free-form text.
+# 3) judge_model determines the scoring source:
+#    - None / exact_matching / extract_matching -> Rule-based scoring (only allowed for MCQ/NA)
+#    - Other model names -> LLM-based scoring
+#    - task_name = VQA strictly requires LLM (no fallback to rules allowed)
+# 4) judge_mode determines the scoring method:
+#    - binary: A/B/C (Default)
+#    - likert5: 1~5 scale (only supported for VQA/MCQ, forbidden for NA)
+# 5) Output files / cache tags will include judge_mode to prevent collisions between different modes.
+
+
+def build_mcq_score_fn(*, judge_mode: str = 'binary', **judge_kwargs):
     """
     Build an MCQ scoring function based on judge_kwargs['model'].
     """
@@ -527,18 +718,36 @@ def build_mcq_score_fn(**judge_kwargs):
         judge_kwargs=judge_kwargs,
         rule_fn=compute_mcq_score,
         llm_fn=compute_score_llm,   # note: this is the generic LLM scorer
-        mode='mcq',
+        qa_mode='mcq',
+        judge_mode=judge_mode,
     )
 
 
-def build_na_score_fn(**judge_kwargs):
+def build_na_score_fn(*, judge_mode: str = 'binary', **judge_kwargs):
     """
     Build an NA scoring function based on judge_kwargs['model'].
     """
+    assert judge_mode in ('binary',), f'NA scoring only supports judge_mode="binary", but got "{judge_mode}"!'
+
     return _build_score_fn(
         task_name='NA',
         judge_kwargs=judge_kwargs,
         rule_fn=compute_na_score,
         llm_fn=compute_na_score_llm,
-        mode='vqa',
+        qa_mode='vqa',
+        judge_mode=judge_mode,
+    )
+
+
+def build_vqa_score_fn(*, judge_mode: str = 'likert5', **judge_kwargs):
+    """
+    Build an vqa scoring function based on judge_kwargs['model'].
+    """
+    return _build_score_fn(
+        task_name='VQA',
+        judge_kwargs=judge_kwargs,
+        rule_fn=None,
+        llm_fn=compute_score_llm,
+        qa_mode='vqa',
+        judge_mode=judge_mode,
     )

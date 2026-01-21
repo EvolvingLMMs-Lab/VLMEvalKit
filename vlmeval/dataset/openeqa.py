@@ -5,7 +5,7 @@ import pandas as pd
 
 from PIL import Image
 
-from ..smp.file import LMUDataRoot
+from ..smp.file import LMUDataRoot, load
 from .video_base import VideoBaseDataset
 
 
@@ -116,4 +116,16 @@ class OpenEQA(VideoBaseDataset):
         return message
 
     def evaluate(self, eval_file, **judge_kwargs):
-        pass
+        from .utils.spatial_bench.cal_scores import build_vqa_score_fn, eval_vqa_score
+
+        # Select VQA scoring function (LLM-based) according to judge_kwargs['model'].
+        score_fn = build_vqa_score_fn(judge_mode='likert5', **judge_kwargs)
+
+        return eval_vqa_score(
+            load_fn=load,
+            eval_file=eval_file,
+            score_fn=score_fn,
+            group_col='category',
+            order=self._task_category(),
+            dataset_name=getattr(self, 'dataset_name', 'OpenEQA')
+        )

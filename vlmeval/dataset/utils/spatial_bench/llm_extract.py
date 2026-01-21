@@ -1,8 +1,9 @@
+import json
 import re
 import os
 import pandas as pd
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from .tools.utils import build_choices
 from ....smp.log import get_logger
@@ -81,12 +82,193 @@ GENERIC_EXTRACT_JUDGE_PROMPT = (
 )
 
 
+GENERIC_SCORE_PROMPT = (
+    "You are an AI assistant who will help me to evaluate the response given the question and the correct answer.\n"
+    "To mark a response, you should output a single integer between 1 and 5 (including 1, 5).\n"
+    "5 means that the response perfectly matches the answer.\n"
+    "1 means that the response is completely different from the answer.\n"
+    "\n"
+    "Example 1:\n"
+    "Question: Is it overcast?\n"
+    "Answer: no\n"
+    "Response: yes\n"
+    "Your mark: 1\n"
+    "\n"
+    "Example 2:\n"
+    "Question: Who is standing at the table?\n"
+    "Answer: woman\n"
+    "Response: Jessica\n"
+    "Your mark: 3\n"
+    "\n"
+    "Example 3:\n"
+    "Question: Are there drapes to the right of the bed?\n"
+    "Answer: yes\n"
+    "Response: yes\n"
+    "Your mark: 5\n"
+    "\n"
+    "IMPORTANT – OUTPUT FORMAT:\n"
+    "• Return EXACTLY ONE line formatted as <SCORE>\\t<EXTRACTED_ANSWER>.\n"
+    "• <SCORE> must be an integer in [1, 5].\n"
+    "• <EXTRACTED_ANSWER> is the normalized final answer you extracted from the response.\n"
+    "• If no meaningful answer can be extracted, output 'N/A' after the tab.\n"
+    "• Do NOT include any additional commentary.\n"
+    "\n"
+    "Your Turn:\n"
+    "Question: {question}\n"
+    "Answer: {answer}\n"
+    "Response: {prediction}\n"
+)
+
+
+GENERIC_SCORE_PROMPT_WITH_EXTRA = (
+    "You are an AI assistant who will help me to evaluate the response given the question, the correct answer, and extra answers that are also correct.\n"  # noqa: E501
+    "To mark a response, you should output a single integer between 1 and 5 (including 1, 5).\n"
+    "5 means that the response perfectly matches the answer or any of the extra answers.\n"
+    "1 means that the response is completely different from the answer and all of the extra answers.\n"
+    "\n"
+    "Example 1:\n"
+    "Question: Is it overcast?\n"
+    "Answer: no\n"
+    "Extra Answers: ['doesn't look like it', 'no',' it's sunny']\n"
+    "Response: yes\n"
+    "Your mark: 1\n"
+    "\n"
+    "Example 2:\n"
+    "Question: Who is standing at the table?\n"
+    "Answer: woman\n"
+    "Extra Answers: ['a woman', 'a lady', 'woman']\n"
+    "Response: Jessica\n"
+    "Your mark: 3\n"
+    "\n"
+    "Example 3:\n"
+    "Question: Are there drapes to the right of the bed?\n"
+    "Answer: yes\n"
+    "Extra Answers: ['yes, there are drapes', 'yeah', 'the drapes are to the right of the king bed']\n"
+    "Response: yes\n"
+    "Your mark: 5\n"
+    "\n"
+    "IMPORTANT – OUTPUT FORMAT:\n"
+    "• Return EXACTLY ONE line formatted as <SCORE>\\t<EXTRACTED_ANSWER>.\n"
+    "• <SCORE> must be an integer in [1, 5].\n"
+    "• <EXTRACTED_ANSWER> is the normalized final answer you extracted from the response.\n"
+    "• If no meaningful answer can be extracted, output 'N/A' after the tab.\n"
+    "• Do NOT include any additional commentary.\n"
+    "\n"
+    "Your Turn:\n"
+    "Question: {question}\n"
+    "Answer: {answer}\n"
+    "Extra Answers: {extra_answers}\n"
+    "Response: {prediction}\n"
+)
+
+
 def build_option_str(option_dict):
     s = ''
     for c, content in option_dict.items():
         if not pd.isna(content):
             s += f'{c}. {content}\n'
     return s
+
+
+def normalize_extra_answers(raw: Any) -> Optional[List[str]]:
+    if raw is None:
+        return None
+
+    if isinstance(raw, float) and pd.isna(raw):
+        return None
+
+    if isinstance(raw, list):
+        cleaned = [str(x).strip() for x in raw if str(x).strip()]
+        return cleaned or None
+
+    if isinstance(raw, str):
+        value = raw.strip()
+        if not value:
+            return None
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                cleaned = [str(x).strip() for x in parsed if str(x).strip()]
+                return cleaned or None
+        except json.JSONDecodeError:
+            pass
+
+        candidates = [seg.strip() for seg in re.split(r'[|;,\n]+', value) if seg.strip()]
+        return candidates or [value]
+
+    return [str(raw).strip()]
+
+
+def format_extra_answers(extra_answers: Optional[List[str]]) -> str:
+    if not extra_answers:
+        return '[]'
+    return json.dumps(extra_answers, ensure_ascii=False)
+
+
+def call_llm_score(
+    model,
+    max_retry: int,
+    question: str,
+    answer: str,
+    prediction: str,
+    extra_answers: Optional[List[str]] = None,
+):
+    logger = get_logger('LLM Score')
+
+    if extra_answers:
+        prompt = GENERIC_SCORE_PROMPT_WITH_EXTRA.format(
+            question=question,
+            answer=answer,
+            prediction=prediction,
+            extra_answers=format_extra_answers(extra_answers),
+        )
+    else:
+        prompt = GENERIC_SCORE_PROMPT.format(
+            question=question,
+            answer=answer,
+            prediction=prediction,
+        )
+
+    for _ in range(max_retry):
+        ans = model.generate(prompt).strip()
+        if 'Failed to obtain answer via API' in ans:
+            logger.warning('GPT API failed to answer. ')
+            continue
+
+        lines = [line.strip() for line in ans.splitlines() if line.strip()]
+        if not lines:
+            logger.warning(f'Empty LLM score output: {ans}')
+            continue
+
+        line = lines[0]
+        score_part = None
+        extracted_part = ''
+
+        if '\t' in line:
+            score_part, extracted_part = line.split('\t', 1)
+        else:
+            score_match = re.match(r'^([1-5])\b(.*)$', line)
+            if score_match:
+                score_part = score_match.group(1)
+                extracted_part = score_match.group(2)
+            else:
+                inline_match = re.search(r'\b([1-5])\b', line)
+                if inline_match:
+                    score_part = inline_match.group(1)
+                    extracted_part = line[inline_match.end():]
+
+        if score_part and score_part.isdigit():
+            score = int(score_part)
+            if 1 <= score <= 5:
+                extracted = extracted_part.strip().lstrip('|,:-')
+                extracted = extracted.strip()
+                extracted = extracted or 'N/A'
+                return score, extracted
+
+        logger.warning(f'Unparsable LLM score output: {ans}')
+
+    logger.warning('LLM score failed after max_retry, fallback to 0.')
+    return 0, 'N/A'
 
 
 def call_llm_extract(
@@ -159,67 +341,76 @@ def call_llm_extract(
 def extract_ans_by_llm(
     model,
     row: pd.Series,
-    mode: str = 'mcq',
+    qa_mode: str = 'mcq',
+    judge_mode: str = 'binary',
     max_retry: int = 3
 ):
     """
     Generic LLM-based extraction + grading entry point.
 
     Returns:
-        (grade, extracted_answer)
-        - grade in {'A', 'B', 'C'}
+        (grade_or_score, extracted_answer)
+        - grade_or_score: 'A'/'B'/'C' when judge_mode='binary', or 1-5 integer for 'likert5'
         - extracted_answer: the final answer string extracted by the LLM
     """
-    valid_mode = ['mcq', 'vqa']
-    assert mode in valid_mode, f'Extract llm func mode must be in {valid_mode}, but got {mode}!'
+    valid_qa_mode = ['mcq', 'vqa']
+    valid_judge_mode = ['binary', 'likert5']
+    assert qa_mode in valid_qa_mode, f'Extract llm func qa_mode must be in {valid_qa_mode}, but got {qa_mode}!'
+    assert judge_mode in valid_judge_mode, f'judge_mode must be in {valid_judge_mode}, but got {judge_mode}!'
 
     question = str(row.get('question', ''))
-    prediction = str(row.get('prediction', ''))
+    prediction_raw = row.get('prediction', '')
+    prediction = '' if prediction_raw is None else str(prediction_raw)
     gold_raw = row.get('answer', '')
 
-    # Mode mcq
-    if mode == 'mcq':
-        # Build choices
-        choices = build_choices(row)
-        option_str = build_option_str(choices) if choices else ''
+    if judge_mode == 'likert5':
+        if not prediction.strip():
+            return 0, 'N/A'
 
-        # Build options block for llm to know if there are options
-        options_block = ''
-        if option_str:
-            options_block = 'Options:\n' + option_str + '\n'
-        else:
-            options_block = ''
+        extra_answers = normalize_extra_answers(row.get('extra_answers', None))
+        score, extracted = call_llm_score(
+            model=model,
+            max_retry=max_retry,
+            question=question,
+            answer=str(gold_raw),
+            prediction=prediction,
+            extra_answers=extra_answers,
+        )
+        return score, extracted
 
-        # Standard answer: prefer "letter + text" form if possible
-        answer_letter = str(gold_raw).strip().upper()
-        if choices and answer_letter in choices:
-            gold_answer = f'{answer_letter}. {choices[answer_letter]}'
-        else:
-            # Fallback: use raw answer field
-            gold_answer = str(gold_raw)
-
-    # Mode vqa
-    else:
+    elif judge_mode == 'binary':
         options_block = ''
         gold_answer = str(gold_raw)
 
-    grade, extracted = call_llm_extract(
-        model=model,
-        max_retry=max_retry,
-        question=question,
-        prediction=prediction,
-        gold_answer=gold_answer,
-        options_block=options_block,
-    )
+        if qa_mode == 'mcq':
+            choices = build_choices(row)
+            option_str = build_option_str(choices) if choices else ''
 
-    return grade, extracted
+            if option_str:
+                options_block = 'Options:\n' + option_str + '\n'
+
+            answer_letter = str(gold_raw).strip().upper()
+            if choices and answer_letter in choices:
+                gold_answer = f'{answer_letter}. {choices[answer_letter]}'
+
+        grade, extracted = call_llm_extract(
+            model=model,
+            max_retry=max_retry,
+            question=question,
+            prediction=prediction,
+            gold_answer=gold_answer,
+            options_block=options_block,
+        )
+
+        return grade, extracted
 
 
 def parallel_llm_extract(
     df: pd.DataFrame,
     model,
     *,
-    mode: str,
+    qa_mode: str,
+    judge_mode: str,
     max_retry: int,
     nproc: int,
     cache_file: str | None = None,
@@ -229,11 +420,13 @@ def parallel_llm_extract(
     Run LLM-based answer extraction with optional cache.
 
     Returns:
-        grades: list of 'A' / 'B' / 'C' (or None)
+        grades: list of 'A' / 'B' / 'C' (or scores when judge_mode='likert5')
         extracted_list: list of extracted answer strings (or None)
     """
     valid_mode = ['mcq', 'vqa']
-    assert mode in valid_mode, f'LLM extract mode must be in {valid_mode}, but got {mode}!'
+    valid_judge_mode = ['binary', 'likert5']
+    assert qa_mode in valid_mode, f'LLM extract qa_mode must be in {valid_mode}, but got {qa_mode}!'
+    assert judge_mode in valid_judge_mode, f'judge_mode must be in {valid_judge_mode}, but got {judge_mode}!'
 
     df = df.copy()
     rows: List[Dict[str, Any]] = list(df.to_dict(orient='records'))
@@ -247,7 +440,8 @@ def parallel_llm_extract(
         grade, extracted = extract_ans_by_llm(
             model=model,
             row=row,
-            mode=mode,
+            qa_mode=qa_mode,
+            judge_mode=judge_mode,
             max_retry=max_retry,
         )
         return grade, extracted
