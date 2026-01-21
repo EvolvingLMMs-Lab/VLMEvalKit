@@ -12,7 +12,7 @@ def _judge_tag_from_backend_model_mode(backend: str | None, model_name: str | No
     """
     if backend == 'llm':
         tag = f'llm_{model_name}' if model_name else 'llm_matching'
-        if mode and mode != 'binary':
+        if mode and mode != 'binary':  # only append non-binary modes, e.g., 'likert5'
             tag += f'_{mode}'
         return tag
     return 'extract_matching'
