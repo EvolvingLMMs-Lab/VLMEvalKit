@@ -119,7 +119,10 @@ class OpenEQA(VideoBaseDataset):
         from .utils.spatial_bench.cal_scores import build_vqa_score_fn, eval_vqa_score
 
         # Select VQA scoring function (LLM-based) according to judge_kwargs['model'].
-        score_fn = build_vqa_score_fn(judge_mode='likert5', **judge_kwargs)
+        judge_mode = 'likert5'  # Default to 'likert5' mode
+        assert judge_mode in ['binary', 'likert5'], f"Unsupported judge_mode: {judge_mode}"
+
+        score_fn = build_vqa_score_fn(judge_mode=judge_mode, **judge_kwargs)
 
         return eval_vqa_score(
             load_fn=load,
