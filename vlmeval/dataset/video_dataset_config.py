@@ -265,6 +265,15 @@ dsr_variants = [
 ]
 dsr_dataset = _build_video_variants(dsr_subsets, DSRBench, dsr_variants)
 
+openeqa_subsets = OpenEQA.supported_datasets()
+openeqa_variants = [
+    ("64frame", dict(nframe=64)),
+    ("32frame", dict(nframe=32)),
+    ("30frame", dict(nframe=30)),
+    ("1fps", dict(fps=1.0)),
+]
+openeqa_dataset = _build_video_variants(openeqa_subsets, OpenEQA, openeqa_variants)
+
 
 supported_video_datasets = {}
 
@@ -278,7 +287,7 @@ dataset_groups = [
 # add by EASI team
 dataset_groups += [
     video_vsi_dataset, sitebenchvideo_dataset, mmsi_video_dataset, vsisuper_recall_dataset, vsisuper_count_dataset,
-    sti_dataset, dsr_dataset
+    sti_dataset, dsr_dataset, openeqa_dataset
 ]
 
 for grp in dataset_groups:
