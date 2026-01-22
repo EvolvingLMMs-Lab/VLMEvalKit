@@ -2145,7 +2145,15 @@ neo_series = {
         min_pixels=1280 * 32 * 32,
         max_pixels=4096 * 32 * 32,
         downsample_ratio=0.5,
-    )
+    ),
+    "NEOov-2B-si-data32": partial(
+        NEOChat, 
+        model_path="Paranioar/NEO1_5-2B-SFT", 
+        patch_size=16,
+        min_pixels=480 * 640,
+        max_pixels=480 * 640,
+        downsample_ratio=0.5,
+    ), 
 }
 
 internvl_groups = [
