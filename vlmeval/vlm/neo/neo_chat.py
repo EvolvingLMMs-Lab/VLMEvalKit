@@ -158,6 +158,8 @@ class NEOChat(BaseModel):
             self.system_prompt = ''
             self.cot_prompt = None
 
+        model_path = '/mnt/aigc/yanglei/.cache/huggingface/hub/models--Paranioar--NEO1_5-2B-SFT/snapshots/11d78fbee2622a1fe8dfd8951dd3b4cff00de6b6'  # noqa: E501
+
         self.model_path = model_path
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, use_fast=False)
 
@@ -234,6 +236,8 @@ class NEOChat(BaseModel):
         warnings.warn(f'Following kwargs received: {self.kwargs}, will use as generation config. ')
 
     def use_custom_prompt(self, dataset):
+        return False
+
         assert dataset is not None
         if dataset in [
             'atomic_dataset', 'electro_dataset', 'mechanics_dataset',
