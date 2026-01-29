@@ -147,7 +147,7 @@ class MUIRBench(ImageMCQDataset):
             part = part.strip()
             if part:
                 segs.append(dict(type='text', value=part))
-            if i < len(images) - 1:
+            if i < len(images):
                 segs.append(dict(type='image', value=images[i]))
 
         return [s for s in segs if s['value']]
