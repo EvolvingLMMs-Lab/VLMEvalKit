@@ -271,8 +271,10 @@ VIDEO_DATASET = [
 ]
 
 # add by EASI team
-VIDEO_DATASET += [SiteBenchVideo, VsiBench, MMSIVideoBench, VsiSuperRecall, VsiSuperCount, STIBench,
-                  DSRBench]
+VIDEO_DATASET += [
+    SiteBenchVideo, VsiBench, MMSIVideoBench, VsiSuperRecall, VsiSuperCount, STIBench,
+    DSRBench, OSIBench
+]
 
 TEXT_DATASET = [
     TextMCQDataset
