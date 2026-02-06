@@ -181,7 +181,7 @@ class OSIBench(VideoBaseDataset):
 
         return frame_paths, indices, video_info
 
-    def _parse_options(row):
+    def _parse_options(self, row):
         raw = row.get('options')
         if isinstance(raw, list):
             return raw
@@ -197,7 +197,7 @@ class OSIBench(VideoBaseDataset):
             return [ln for ln in s.splitlines() if ln]
         return []
 
-    def build_prompt(self, line, video_llm, **kwargs):
+    def build_prompt(self, line, video_llm):
         if isinstance(line, int):
             line = self.data.iloc[line]
 
