@@ -1,11 +1,14 @@
 import ast
 import os
+import pickle
 import decord
-import pandas as pd
+import warnings
 import numpy as np
+import pandas as pd
 
 from PIL import Image
 from tqdm import tqdm
+from collections import OrderedDict
 from huggingface_hub import snapshot_download
 
 from ..smp.misc import get_cache_path, modelscope_flag_set
@@ -28,10 +31,10 @@ class OSIBench(VideoBaseDataset):
     LMUData_root = LMUDataRoot()
 
     DATASET_URL = {
-        'OSI-Bench': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/OSI-Bench.tsv',  # noqa: E501
+        'OSI-Bench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OSI-Bench.tsv',  # noqa: E501
     }
     DATASET_MD5 = {
-        'OSI-Bench': None,
+        'OSI-Bench': '0a31bc83a1e147a3d57056f069078ffe',
     }
 
     def __init__(self, dataset, pack=False, nframe=0, fps=-1):
@@ -290,118 +293,113 @@ class OSIBench(VideoBaseDataset):
 
         return msgs
 
+    @staticmethod
+    def _task_type(q_type):
+        q_type = str(q_type).lower()
+        if q_type == 'mcq':
+            return 'MCQ'
+        if q_type == 'numerical':
+            return 'NA'
+        return 'UNKNOWN'
+
+    @staticmethod
+    def _apply_osi_na_mra(df):
+        from .utils.spatial_bench.cal_scores import mean_relative_accuracy, to_float
+
+        if not len(df):
+            return df
+
+        thres_map = {
+            'absolute_speed': 0.30,
+            'absolute_displacement': 0.30,
+            'trajectory_length': 2.0,
+        }
+
+        df = df.copy()
+        mra_list = []
+        for _, row in df.iterrows():
+            pred = to_float(row.get('pred_extracted'))
+            ans = to_float(row.get('answer'))
+            cat = row.get('category')
+
+            if (
+                pred is None
+                or ans is None
+                or (isinstance(pred, float) and np.isnan(pred))
+                or (isinstance(ans, float) and np.isnan(ans))
+            ):
+                mra = 0.0
+            else:
+                thres = thres_map.get(cat)
+                if thres is not None and ans == 0:
+                    if pred < thres:
+                        mra = 1.0
+                    else:
+                        mra = mean_relative_accuracy(pred, thres, 0.5, 0.95, 0.05)
+                else:
+                    if ans == 0:
+                        mra = 1.0 if pred == 0 else 0.0
+                    else:
+                        mra = mean_relative_accuracy(pred, ans, 0.5, 0.95, 0.05)
+
+            mra_list.append(float(mra))
+
+        df['MRA:.5:.95:.05'] = mra_list
+        return df
+
+    def _build_summary(self, mcq_df, na_df, merged_df):
+        summary = OrderedDict()
+
+        overall = float(merged_df['score'].mean()) if len(merged_df) else 0.0
+        summary['overall'] = overall * 100.0
+
+        if len(mcq_df) and 'hit' in mcq_df:
+            summary['mcq_accuracy'] = float(mcq_df['hit'].mean()) * 100.0
+        if len(na_df) and 'MRA:.5:.95:.05' in na_df:
+            summary['na_MRA:.5:.95:.05'] = float(na_df['MRA:.5:.95:.05'].mean()) * 100.0
+
+        if len(merged_df) and 'category' in merged_df.columns:
+            prefer_order = self._task_category() if hasattr(self, '_task_category') else []
+            present = merged_df['category'].dropna().unique().tolist()
+            ordered = [c for c in prefer_order if c in present] + \
+                      [c for c in present if c not in prefer_order]
+            for cat in ordered:
+                sub = merged_df[merged_df['category'] == cat]
+                if len(sub):
+                    summary[f'{cat}_score'] = float(sub['score'].mean()) * 100.0
+
+        tab_keys = ', '.join(list(summary.keys()))
+        tab_vals = ', '.join([f'{v:.3f}' for v in summary.values()])
+        summary['tabulated_keys'] = tab_keys
+        summary['tabulated_results'] = tab_vals
+        return summary
+
     def evaluate(self, eval_file, **judge_kwargs):
         """
         EASI-style evaluation with LLM-judge support.
         Set judge_kwargs['model'] to enable LLM judging.
         """
-        import pickle
-        import warnings
-        from collections import OrderedDict
-
         from .utils.spatial_bench.cal_scores import (
             build_mcq_score_fn,
             build_na_score_fn,
             attach_score_cache,
-            mean_relative_accuracy,
         )
         from .utils.spatial_bench.tools.files import (
             build_eval_paths,
             get_judge_tag_from_score_fn,
         )
 
-        def _task_type(q_type):
-            q_type = str(q_type).lower()
-            if q_type == 'mcq':
-                return 'MCQ'
-            if q_type == 'numerical':
-                return 'NA'
-            return 'UNKNOWN'
-
-        def _to_float(val):
-            try:
-                return float(val)
-            except Exception:
-                return None
-
-        def _apply_osi_na_mra(df):
-            if not len(df):
-                return df
-
-            thres_map = {
-                'absolute_speed': 0.30,
-                'absolute_displacement': 0.30,
-                'trajectory_length': 2.0,
-            }
-
-            df = df.copy()
-            mra_list = []
-            for _, row in df.iterrows():
-                pred = _to_float(row.get('pred_extracted'))
-                ans = _to_float(row.get('answer'))
-                cat = row.get('category')
-
-                if (
-                    pred is None
-                    or ans is None
-                    or (isinstance(pred, float) and np.isnan(pred))
-                    or (isinstance(ans, float) and np.isnan(ans))
-                ):
-                    mra = 0.0
-                else:
-                    thres = thres_map.get(cat)
-                    if thres is not None and ans == 0:
-                        if pred < thres:
-                            mra = 1.0
-                        else:
-                            mra = mean_relative_accuracy(pred, thres, 0.5, 0.95, 0.05)
-                    else:
-                        if ans == 0:
-                            mra = 1.0 if pred == 0 else 0.0
-                        else:
-                            mra = mean_relative_accuracy(pred, ans, 0.5, 0.95, 0.05)
-
-                mra_list.append(float(mra))
-
-            df['MRA:.5:.95:.05'] = mra_list
-            return df
-
-        def _build_summary(mcq_df, na_df, merged_df):
-            summary = OrderedDict()
-
-            overall = float(merged_df['score'].mean()) if len(merged_df) else 0.0
-            summary['overall'] = overall * 100.0
-
-            if len(mcq_df) and 'hit' in mcq_df:
-                summary['mcq_accuracy'] = float(mcq_df['hit'].mean()) * 100.0
-            if len(na_df) and 'MRA:.5:.95:.05' in na_df:
-                summary['na_MRA:.5:.95:.05'] = float(na_df['MRA:.5:.95:.05'].mean()) * 100.0
-
-            if len(merged_df) and 'category' in merged_df.columns:
-                prefer_order = self._task_category() if hasattr(self, '_task_category') else []
-                present = merged_df['category'].dropna().unique().tolist()
-                ordered = [c for c in prefer_order if c in present] + \
-                          [c for c in present if c not in prefer_order]
-                for cat in ordered:
-                    sub = merged_df[merged_df['category'] == cat]
-                    if len(sub):
-                        summary[f'{cat}_score'] = float(sub['score'].mean()) * 100.0
-
-            tab_keys = ', '.join(list(summary.keys()))
-            tab_vals = ', '.join([f'{v:.3f}' for v in summary.values()])
-            summary['tabulated_keys'] = tab_keys
-            summary['tabulated_results'] = tab_vals
-            return summary
-
+        # 1) Load predictions and split into MCQ/NA subsets.
         data = load(eval_file)
         if 'index' in data.columns:
             data = data.sort_values(by='index')
         data['prediction'] = [str(x) for x in data['prediction']]
-        data['task_type'] = data['question_type'].map(_task_type)
+        data['task_type'] = data['question_type'].map(self._task_type)
 
         mcq_data = data[data['task_type'] == 'MCQ'].copy()
         na_data = data[data['task_type'] == 'NA'].copy()
 
+        # 2) Build scoring functions and resolve judge_tag + output paths.
         score_fns = {
             'mcq': build_mcq_score_fn(**judge_kwargs) if len(mcq_data) else None,
             'na': build_na_score_fn(**judge_kwargs) if len(na_data) else None,
@@ -424,9 +422,10 @@ class OSIBench(VideoBaseDataset):
                 sub_tag=sub_tag,
             )
 
+        # 3) Run scoring (rule/LLM) and merge MCQ/NA into a unified table.
         mcq_scored = score_fns['mcq'](mcq_data) if score_fns['mcq'] else mcq_data
         na_scored = score_fns['na'](na_data) if score_fns['na'] else na_data
-        na_scored = _apply_osi_na_mra(na_scored)
+        na_scored = self._apply_osi_na_mra(na_scored)
 
         frames = []
         if len(mcq_scored):
@@ -451,7 +450,8 @@ class OSIBench(VideoBaseDataset):
                 'hit', 'MRA:.5:.95:.05', 'score',
             ])
 
-        summary = _build_summary(mcq_scored, na_scored, merged)
+        # 4) Summarize and save result artifacts (pkl/xlsx/acc.tsv).
+        summary = self._build_summary(mcq_scored, na_scored, merged)
 
         try:
             to_dump = {
