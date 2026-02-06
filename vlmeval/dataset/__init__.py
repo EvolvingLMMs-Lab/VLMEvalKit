@@ -70,6 +70,7 @@ from .vsibench import VsiBench, VsiSuperRecall, VsiSuperCount
 from .mmsibench import MMSIVideoBench
 from .stibench import STIBench
 from .dsrbench import DSRBench
+from .osibench import OSIBench
 
 from .cmmmu import CMMMU
 from .emma import EMMADataset
