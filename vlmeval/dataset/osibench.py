@@ -1,3 +1,4 @@
+import ast
 import os
 import decord
 import pandas as pd
@@ -28,11 +29,9 @@ class OSIBench(VideoBaseDataset):
 
     DATASET_URL = {
         'OSI-Bench': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/OSI-Bench.tsv',  # noqa: E501
-        'OSI-Bench_test': '/mnt/aigc/wangyubo/data/UG/data/benchmark/opensource_tsv/OSI-Bench_test.tsv',  # noqa: E501
     }
     DATASET_MD5 = {
         'OSI-Bench': None,
-        'OSI-Bench_test': None
     }
 
     def __init__(self, dataset, pack=False, nframe=0, fps=-1):
@@ -40,7 +39,7 @@ class OSIBench(VideoBaseDataset):
 
     @classmethod
     def supported_datasets(cls):
-        return ['OSI-Bench', 'OSI-Bench_test']
+        return ['OSI-Bench']
 
     def _task_category(self):
         return [
@@ -179,8 +178,23 @@ class OSIBench(VideoBaseDataset):
 
         return frame_paths, indices, video_info
 
-    def build_prompt(self, line, video_llm, **kwargs):
+    def _parse_options(row):
+        raw = row.get('options')
+        if isinstance(raw, list):
+            return raw
+        if isinstance(raw, str):
+            s = raw.strip()
+            if s.startswith('[') and s.endswith(']'):
+                try:
+                    parsed = ast.literal_eval(s)
+                    if isinstance(parsed, list):
+                        return parsed
+                except Exception:
+                    pass
+            return [ln for ln in s.splitlines() if ln]
+        return []
 
+    def build_prompt(self, line, video_llm, **kwargs):
         if isinstance(line, int):
             line = self.data.iloc[line]
 
@@ -204,7 +218,7 @@ class OSIBench(VideoBaseDataset):
         )
 
         # NA prompt
-        if question_category in ["absolute_distance", "trajectory_length"]:
+        if question_category in ["absolute_distance", "relative_direction_angular", "trajectory_length"]:
             instruction = "Your answer must be only the final numeric value, without units or any other text."
             prompt_text = f"{preamble_num_tagged}\nQuestion: {question_text}\n\n{instruction}\n"
 
@@ -220,31 +234,39 @@ class OSIBench(VideoBaseDataset):
             prompt_text = f"{preamble_num_tagged}\nQuestion: {question_text}\n\n{instruction}"
 
         # MCQ prompt
-        elif question_category in ["relative_distance", "relative_direction_categorical_ordinal"]:
+        elif question_category in [
+            "relative_distance",
+            "relative_direction_categorical",
+            "relative_direction_categorical_cardinal",
+            "relative_direction_categorical_ordinal",
+        ]:
             instruction = "Your answer must be only the single letter (e.g., A, B, C, or D) of the correct option."
 
-            options = line.get('options', [])
-            options_text = "\n".join(options)
+            options = self._parse_options(line)
+            options_text = "\n".join([str(o) for o in options])
             prompt_text = f"{preamble_num_tagged}\nQuestion: {question_text}\n{options_text}\n\n{instruction}"
 
         # Qualitative Ego-Motion does not need numerical tags, so the prompt is a bit different.
         elif question_category == "trajectory_description":
             instruction = "Your answer must be only the single letter (e.g., A, B, C, or D) of the correct option."
-            options = line.get('options', [])
-            options_text = "\n".join(options)
+            options = self._parse_options(line)
+            options_text = "\n".join([str(o) for o in options])
             prompt_text = f"Question: {question_text}\n{options_text}\n\n{instruction}"
 
         prompt_text = prompt_text + "The answer is:"
         msgs = []
 
+        video_path = line['video']
+        if not os.path.isabs(video_path):
+            video_path = os.path.join(self.data_root, video_path)
+
         if video_llm:
-            video_path = os.path.join(self.data_root, line['video'])
             if os.path.exists(video_path):
                 msgs.append(dict(type='video', value=video_path))
             else:
                 print(f"Warning: {video_path} file not found.")
         else:
-            frame_paths = self.save_video_frames(line['video'])
+            frame_paths, _, _ = self.save_video_frames(video_path)
 
             video_len_raw = line.get('video_length')
             video_len = 0
@@ -264,7 +286,7 @@ class OSIBench(VideoBaseDataset):
             for frame_path in frame_paths:
                 msgs.append(dict(type='image', value=frame_path))
 
-        msgs = [dict(type='text', value=prompt_text)]
+        msgs.append(dict(type='text', value=prompt_text))
 
         return msgs
 
