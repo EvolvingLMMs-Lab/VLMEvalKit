@@ -31,18 +31,25 @@ class OSIBench(VideoBaseDataset):
     LMUData_root = LMUDataRoot()
 
     DATASET_URL = {
+        # Aligned with OSI-Bench codebase
         'OSI-Bench': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OSI-Bench.tsv',  # noqa: E501
+
+        # General visual-first format
+        'OSI-Bench_visual_first': 'https://huggingface.co/datasets/lmms-lab-si/EASI-Leaderboard-Data/resolve/main/OSI-Bench.tsv',  # noqa: E501
     }
     DATASET_MD5 = {
         'OSI-Bench': '0a31bc83a1e147a3d57056f069078ffe',
+        'OSI-Bench_visual_first': '0a31bc83a1e147a3d57056f069078ffe',
     }
 
     def __init__(self, dataset, pack=False, nframe=0, fps=-1):
         super().__init__(dataset=dataset, pack=pack, nframe=nframe, fps=fps)
+        if 'visual_first' in dataset:
+            self.visual_first = True
 
     @classmethod
     def supported_datasets(cls):
-        return ['OSI-Bench']
+        return ['OSI-Bench', 'OSI-Bench_visual_first']
 
     def _task_category(self):
         return [
@@ -289,7 +296,11 @@ class OSIBench(VideoBaseDataset):
             for frame_path in frame_paths:
                 msgs.append(dict(type='image', value=frame_path))
 
-        msgs.append(dict(type='text', value=prompt_text))
+        # OSI-Bench origin uses text-first implementation.
+        if self.visual_first:
+            msgs.append(dict(type='text', value=prompt_text))
+        else:
+            msgs.insert(0, dict(type='text', value=prompt_text))
 
         return msgs
 
