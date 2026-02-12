@@ -132,7 +132,7 @@ class MMSIVideoBench(VideoBaseDataset):
     }
 
     DATASET_MD5 = {
-        'MMSIVideoBench': '2903ab3c6b06541aa28838c2368eb507'
+        'MMSIVideoBench': 'd5d2c1b3b09db3e7d8cda91f3cfa8e3d'
     }
 
     _CATEGORY_TASK_ORDER = None
