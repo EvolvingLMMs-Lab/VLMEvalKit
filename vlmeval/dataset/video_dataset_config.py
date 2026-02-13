@@ -275,6 +275,15 @@ osi_variants = [
 ]
 osi_dataset = _build_video_variants(osi_subsets, OSIBench, osi_variants)
 
+cosmos_subsets = CosmosBench.supported_datasets()
+cosmos_variants = [
+    ("64frame", dict(nframe=64)),
+    ("32frame", dict(nframe=32)),
+    ("4fps", dict(fps=4.0)),
+    ("1fps", dict(fps=1.0)),
+]
+cosmos_dataset = _build_video_variants(cosmos_subsets, CosmosBench, cosmos_variants)
+
 
 supported_video_datasets = {}
 
@@ -288,7 +297,7 @@ dataset_groups = [
 # add by EASI team
 dataset_groups += [
     video_vsi_dataset, sitebenchvideo_dataset, mmsi_video_dataset, vsisuper_recall_dataset, vsisuper_count_dataset,
-    sti_dataset, dsr_dataset, osi_dataset
+    sti_dataset, dsr_dataset, osi_dataset, cosmos_dataset
 ]
 
 for grp in dataset_groups:
