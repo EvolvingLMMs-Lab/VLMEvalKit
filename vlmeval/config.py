@@ -2129,6 +2129,25 @@ sensenova_si_series = {
         use_custom_prompt=False,
         version="V2.0"
     ),
+    "SenseNova-SI-1.3-Qwen3-VL-8B": partial(
+        Qwen3VLChat,
+        model_path="sensenova/SenseNova-SI-1.3-Qwen3-VL-8B",
+        use_custom_prompt=False,
+    ),
+    # SenseNova-SI-1.4 series
+    "SenseNova-SI-1.4-InternVL3-8B": partial(
+        InternVLChat, 
+        model_path="sensenova/SenseNova-SI-1.4-InternVL3-8B", 
+        use_custom_prompt=False,
+        version="V2.0"
+    ),
+    # SenseNova-SI-1.5 series
+    "SenseNova-SI-1.5-InternVL3-8B": partial(
+        InternVLChat, 
+        model_path="sensenova/SenseNova-SI-1.5-InternVL3-8B", 
+        use_custom_prompt=False,
+        version="V2.0"
+    ),
 }
 
 internvl_groups = [
