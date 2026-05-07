@@ -249,7 +249,41 @@ def infer_data_job_video(
         else:
             for x in meta['index']:
                 assert x in data_all
-            meta['prediction'] = [str(data_all[x]) for x in meta['index']]
+            prediction = [str(data_all[x]) for x in meta['index']]
+
+            # Always-on thinking split — see inference.py for rationale.
+            # Reasoning models produce 40k-100k char responses; xlsx
+            # truncates at 32767 chars, dropping the post-``</think>``
+            # answer.  Split now to preserve the answer in ``prediction``.
+            # Override with ``SPLIT_THINK_DISABLE=1``.
+            if os.getenv('SPLIT_THINK_DISABLE', False):
+                meta['prediction'] = prediction
+            else:
+                _XLSX_TAIL_KEEP = 30000
+
+                def split_thinking(s):
+                    if '</think>' in s:
+                        splits = s.split('</think>')
+                        pred = splits[-1].strip()
+                        if len(splits) == 2 and '<think>' in splits[0]:
+                            thinking = splits[0].split('<think>')[1].strip()
+                        else:
+                            thinking = '</think>'.join(splits[:-1])
+                            thinking += '</think>'
+                    elif len(s) > _XLSX_TAIL_KEEP:
+                        # No ``</think>`` but response too long for xlsx
+                        # cell.  Keep the tail (where answers live).
+                        thinking = s[:-_XLSX_TAIL_KEEP]
+                        pred = s[-_XLSX_TAIL_KEEP:]
+                    else:
+                        thinking = ''
+                        pred = s
+                    return (pred, thinking)
+                split_func = model.split_thinking if hasattr(model, 'split_thinking') else split_thinking
+                tups = [split_func(x) for x in prediction]
+                meta['prediction'] = [x[0] for x in tups]
+                meta['thinking'] = [x[1] for x in tups]
+
             if 'image' in meta:
                 meta.pop('image')
 
