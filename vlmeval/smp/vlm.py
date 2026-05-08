@@ -186,11 +186,19 @@ def read_ok(img_path):
 
 
 def gpt_key_set():
+    # Accept any non-empty string.  The original ``startswith('sk-')`` check
+    # rejected proxy / gateway keys (e.g. Cloudsway) that don't follow
+    # OpenAI's canonical ``sk-...`` format.  Concretely: with
+    # ``OPENAI_API_BASE`` pointed at a third-party gateway, the key is
+    # whatever the gateway issues — often a random opaque token, NOT
+    # prefixed.  Falling back to rule-based scoring silently when the
+    # check fails caused identical ``_exact_matching`` and ``_<judge>``
+    # scores in the submission payload (judge never actually ran).
     openai_key = os.environ.get('OPENAI_API_KEY', None)
     if openai_key is None:
         openai_key = os.environ.get('AZURE_OPENAI_API_KEY', None)
-        return isinstance(openai_key, str)
-    return isinstance(openai_key, str) and openai_key.startswith('sk-')
+        return isinstance(openai_key, str) and len(openai_key) > 0
+    return isinstance(openai_key, str) and len(openai_key) > 0
 
 
 def apiok(wrapper):

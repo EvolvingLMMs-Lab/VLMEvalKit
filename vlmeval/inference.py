@@ -222,41 +222,54 @@ def infer_data_job(
         data = dataset.data
         for x in data['index']:
             assert x in data_all
-        if os.getenv('SPLIT_THINK', False):
-            if all(_is_structured_record(data_all[x]) for x in data['index']):
-                prediction = [data_all[x]['prediction'] for x in data['index']]
-                extra_records = [data_all[x]['extra_records'] for x in data['index']]
-                data['extra_records'] = extra_records
-            else:
-                prediction = [str(data_all[x]) for x in data['index']]
+
+        # Always-on thinking split.  Reasoning models can produce 40k-100k
+        # char responses; Excel cells truncate at 32767 chars on xlsx
+        # write, which silently drops the post-``</think>`` answer and
+        # breaks downstream regex extraction.  Splitting now keeps the
+        # answer (post-``</think>``) in ``prediction`` and stashes the
+        # reasoning in a separate ``thinking`` column.  Set
+        # ``SPLIT_THINK_DISABLE=1`` to revert to legacy raw-prediction
+        # behavior if any task depends on the unsplit text.
+        if all(_is_structured_record(data_all[x]) for x in data['index']):
+            prediction = [data_all[x]['prediction'] for x in data['index']]
+            extra_records = [data_all[x]['extra_records'] for x in data['index']]
+            data['extra_records'] = extra_records
+        else:
+            prediction = [str(data_all[x]) for x in data['index']]
+
+        if os.getenv('SPLIT_THINK_DISABLE', False):
+            data['prediction'] = prediction
+        else:
+            # xlsx cell limit (Excel hard cap): 32767 chars.  Keep slightly
+            # under to avoid edge cases.
+            _XLSX_TAIL_KEEP = 30000
 
             def split_thinking(s):
                 if '</think>' in s:
                     splits = s.split('</think>')
-                    prediction = splits[-1].strip()
+                    pred = splits[-1].strip()
                     if len(splits) == 2 and '<think>' in splits[0]:
                         thinking = splits[0].split('<think>')[1].strip()
                     else:
                         thinking = '</think>'.join(splits[:-1])
                         thinking += '</think>'
-                        warnings.warn('Failed to parse thinking, multiple </think> tags or missing <think> tag.')
+                elif len(s) > _XLSX_TAIL_KEEP:
+                    # No ``</think>`` but response too long for xlsx cell.
+                    # Keep the tail (where answers usually live) and stash
+                    # the head as ``thinking`` so the post-extraction
+                    # column has the answer-relevant portion.
+                    thinking = s[:-_XLSX_TAIL_KEEP]
+                    pred = s[-_XLSX_TAIL_KEEP:]
                 else:
                     thinking = ''
-                    prediction = s
-                return (prediction, thinking)
+                    pred = s
+                return (pred, thinking)
             split_func = model.split_thinking if hasattr(model, 'split_thinking') else split_thinking
-            print(f'Prediction format: {os.getenv("SPLIT_THINK")},splitting func: {split_func}')
             tups = [split_func(x) for x in prediction]
             data['prediction'] = [x[0] for x in tups]
             data['thinking'] = [x[1] for x in tups]
-        else:
-            # data['prediction'] = [str(data_all[x]) for x in data['index']]
-            # Add for agent evaluation
-            if all(_is_structured_record(data_all[x]) for x in data['index']):
-                data['prediction'] = [data_all[x]['prediction'] for x in data['index']]
-                data['extra_records'] = [data_all[x]['extra_records'] for x in data['index']]
-            else:
-                data['prediction'] = [str(data_all[x]) for x in data['index']]
+
         if 'image' in data:
             data.pop('image')
 
