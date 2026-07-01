@@ -160,7 +160,7 @@ def reorganize_prompt(message, image_num, dataset=None):
                 image_idx += 1
             elif x["type"] == "text":
                 prompt += x["value"]
-            elif x["type"] == "image":
+            elif x["type"] == "image" and "frame" not in x["value"]:
                 prompt += "<image>\n"
 
     return prompt
