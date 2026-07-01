@@ -2174,6 +2174,7 @@ neo_ov_series = {
         min_pixels=720 * 960,
         max_pixels=720 * 960,
         downsample_ratio=0.5,
+        use_si_config=True,
     ),
     "NEOov-9B-image": partial(
         NEOChat,
@@ -2198,6 +2199,7 @@ neo_ov_series = {
         min_pixels=720 * 960,
         max_pixels=720 * 960,
         downsample_ratio=0.5,
+        use_si_config=True,
     ),
 }
 

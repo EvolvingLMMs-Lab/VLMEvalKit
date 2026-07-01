@@ -1,13 +1,12 @@
-import math
 import re
+import math
+import torch
 import string
-
 import numpy as np
 import pandas as pd
-import torch
+from PIL import Image
 import torch.distributed as dist
 import torchvision.transforms as T
-from PIL import Image
 
 from ...dataset import DATASET_TYPE
 from ...smp import *
@@ -70,6 +69,39 @@ def build_qa_cot_prompt(line, prompt, cot_prompt=None):
 
 
 def build_multi_choice_prompt(line, dataset=None):
+    question = line["question"]
+    if dataset is None or not listinstr(["MUIRBench"], dataset):
+        question = question.replace("<image>", "").strip()
+    hint = line["hint"] if ("hint" in line and not pd.isna(line["hint"])) else None
+    if hint is not None:
+        question = hint + "\n" + question
+
+    options = {
+        cand: line[cand]
+        for cand in string.ascii_uppercase
+        if cand in line and not pd.isna(line[cand])
+    }
+    for key, item in options.items():
+        question += f"\n{key}. {item}"
+    prompt = question
+
+    if len(options):
+        prompt += (
+            "\n请直接回答选项字母。"
+            if cn_string(prompt)
+            else "\nAnswer with the option's letter from the given choices directly."
+        )
+    else:
+        prompt += (
+            "\n请直接回答问题。"
+            if cn_string(prompt)
+            else "\nAnswer the question directly."
+        )
+
+    return prompt
+
+
+def build_multi_choice_prompt_si(line, dataset=None):
     question = line["question"]
     # For MUIRBench, keep <image> placeholders to maintain image positions
     if dataset is None or not listinstr(["MUIRBench"], dataset):
@@ -163,6 +195,52 @@ def build_video_prompt(prompt, dataset=None, max_frames=64):
 
 def reorganize_prompt(message, image_num, dataset=None):
     if dataset is not None and listinstr(["MUIRBench"], dataset):
+        prompt = ""
+        image_idx = 1
+        for x in message:
+            if x["type"] == "text":
+                prompt += x["value"]
+            elif x["type"] == "image":
+                prompt += f"<Image-{image_idx}>"
+                image_idx += 1
+
+        # Add all images at the beginning
+        prompt = (
+            "".join([f"<Image-{i + 1}>: <image>\n" for i in range(image_num)]) + prompt
+        )
+    elif dataset is not None and listinstr(["bmmr"], dataset.lower()):
+        if image_num == 1:
+            prompt = "\n".join([x["value"] for x in message if x["type"] == "text"])
+        else:
+            prompt, image_idx = "", 1
+            for x in message:
+                if x["type"] == "text":
+                    prompt += x["value"]
+                elif x["type"] == "image":
+                    image_idx += 1
+    elif image_num == 1:
+        prompt = "<image>\n" + "\n".join(
+            [x["value"] for x in message if x["type"] == "text"]
+        )
+    else:
+        prompt, image_idx = "", 1
+        for x in message:
+            if "role" in x and x["role"] == "timestamp":
+                if x["value"]:
+                    prompt += f"[{x['value']}]:<image>\n"
+                else:
+                    prompt += f"<image>\n"
+                image_idx += 1
+            elif x["type"] == "text":
+                prompt += x["value"]
+            elif x["type"] == "image" and "frame" not in x["value"]:
+                prompt += "<image>\n"
+
+    return prompt
+
+
+def reorganize_prompt_si(message, image_num, dataset=None):
+    if dataset is not None and listinstr(["MUIRBench"], dataset):
         # Option 1: Keep interleaved structure (currently commented out)
         # prompt = ""
         # image_idx = 1
@@ -183,7 +261,7 @@ def reorganize_prompt(message, image_num, dataset=None):
                 prompt += f"<Image-{image_idx}>"
                 image_idx += 1
 
-        # Add all images at the beginning
+        # Add all images at the beginning with format "Image-i: <image>"
         prompt = (
             "".join([f"<Image-{i + 1}>: <image>\n" for i in range(image_num)]) + prompt
         )
@@ -305,6 +383,37 @@ def parse_bbox_vl(response):
 
 
 def build_mpo_prompt(message, line, dataset):
+    if listinstr(["LLaVABench", "MMVet"], dataset):
+        return message
+
+    question_orig = line["question"]
+    if listinstr(["MathVerse", "MathVision"], dataset):
+        question_orig = question_orig.split("Question:", 1)[-1].strip()
+        question_orig = question_orig.replace("Choices:\n", "").strip()
+    if listinstr(["WeMath"], dataset):
+        question_orig = question_orig.replace(
+            "Regarding the format, please answer following the template below, and be sure to include two <> symbols:\n<Thought process>: <<your thought process>> <Answer>: <<your option>>",
+            "",
+        ).strip()  # noqa: E501
+    options = {
+        cand: line[cand]
+        for cand in string.ascii_uppercase
+        if cand in line and not pd.isna(line[cand])
+    }
+    options_prompt = ""
+    for key, item in options.items():
+        options_prompt += f"{key}. {item}\n"
+
+    if options_prompt.strip():
+        question_orig = f"{question_orig}\n{options_prompt}"
+
+    cot_prompt = mpo_prompt_with_final_answer
+    prompt = cot_prompt.format(question=question_orig).strip()
+    message[0]["value"] = prompt
+    return message
+
+
+def build_mpo_prompt_si(message, line, dataset):
     if listinstr(["LLaVABench", "MMVet"], dataset):
         return message
 
