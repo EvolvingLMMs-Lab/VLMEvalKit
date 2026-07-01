@@ -2150,57 +2150,6 @@ sensenova_si_series = {
     ),
 }
 
-neo_ov_series = {
-    "NEOov-2B-image": partial(
-        NEOChat,
-        model_path="Paranioar/NEO1_5-2B-SFT",
-        patch_size=16,
-        min_pixels=1280 * 32 * 32,
-        max_pixels=16384 * 32 * 32,
-        downsample_ratio=0.5,
-    ),
-    "NEOov-2B-video": partial(
-        NEOChat,
-        model_path="Paranioar/NEO1_5-2B-SFT",
-        patch_size=16,
-        min_pixels=4 * 32 * 32,
-        max_pixels=360 * 640,
-        downsample_ratio=0.5,
-    ),
-    "NEOov-2B-si": partial(
-        NEOChat,
-        model_path="Paranioar/NEO1_5-2B-SFT",
-        patch_size=16,
-        min_pixels=720 * 960,
-        max_pixels=720 * 960,
-        downsample_ratio=0.5,
-    ),
-    "NEOov-9B-image": partial(
-        NEOChat,
-        model_path="Paranioar/NEO1_5-9B-SFT",
-        patch_size=16,
-        min_pixels=1280 * 32 * 32,
-        max_pixels=16384 * 32 * 32,
-        downsample_ratio=0.5,
-    ),
-    "NEOov-9B-video": partial(
-        NEOChat,
-        model_path="Paranioar/NEO1_5-9B-SFT",
-        patch_size=16,
-        min_pixels=4 * 32 * 32,
-        max_pixels=360 * 640,
-        downsample_ratio=0.5,
-    ),
-    "NEOov-9B-si": partial(
-        NEOChat,
-        model_path="Paranioar/NEO1_5-9B-SFT",
-        patch_size=16,
-        min_pixels=720 * 960,
-        max_pixels=720 * 960,
-        downsample_ratio=0.5,
-    ),
-}
-
 internvl_groups = [
     internvl, internvl2, internvl2_5, mini_internvl, internvl2_5_mpo, 
     internvl3, internvl3_5
@@ -2235,13 +2184,8 @@ model_groups = [
     lfm2vl_series, rbdashmm_api_series_lmdeploy, interns1_series, insight_v_series
 ]
 
-# add by EASI team
-model_groups.extend([
-    bagel_series,
-    spatial_related_models,
-    sensenova_si_series,
-    neo_ov_series,
-])
+# add by EASI team 
+model_groups.extend([bagel_series, spatial_related_models, sensenova_si_series])
 
 for grp in model_groups:
     supported_VLM.update(grp)
