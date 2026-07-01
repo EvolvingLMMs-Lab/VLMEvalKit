@@ -120,3 +120,4 @@ from .liquid import LFM2VL
 from .insight_v import InsightV
 from .bagel_umm import Bagel
 from .vlm3r import VLM3R
+from .neo_ov import NEOChat
